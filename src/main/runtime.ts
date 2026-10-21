@@ -132,6 +132,10 @@ export class LocalAgentRuntime implements AgentRuntime {
           emit({ type: 'turn_finished', status: 'complete' }); return
         }
       }
+      // The last step may also leave through `continue` (overflow retry or steering); always close the turn.
+      if (current) current.status = 'complete'
+      emit({ type: 'notice', text: `本轮已用满 ${MAX_STEPS} 步，已暂停在安全位置；回复“继续”即可接着做。` })
+      emit({ type: 'turn_finished', status: 'complete' })
     } catch (error) {
       const stopped = signal.aborted
       const paused = stopped && signal.reason?.name === 'PauseError'

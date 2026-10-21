@@ -226,7 +226,8 @@ export class AgentService {
   /** Asks the current model whether to remind; never runs without fresh activity or while a turn is active. */
   async reminderDecision(since: number, signal: AbortSignal): Promise<string | null> {
     const session = this.session(this.currentId), ref = session.currentModel
-    if (!ref || this.running.size || !this.store.settings.activity.enabled) return null
+    // Same gate as chat recall: desktop observations reach a model only via the user's activity switches.
+    if (!ref || this.running.size || !this.store.settings.activity.enabled || !this.store.settings.activity.useInMemory) return null
     const items = recentActivity(this.store.activity.report(localDate(), '', undefined, 100).items.filter(i => i.kind === 'focus'), since)
     if (!items.length) return null
     const config = this.config(ref); this.memorySecrets(session.workspace)
@@ -238,7 +239,7 @@ export class AgentService {
       else if (event.type === 'usage') reported = event.usage
     }
     // Reminder checks cost tokens too; record them alongside chat usage.
-    if (reported) this.usage(session, reported, ref)
+    if (reported) { this.usage(session, reported, ref); this.publish(session, { type: 'usage_updated', usage: reported, model: ref }, true) }
     return parseDecision(output)
   }
   suspendActivity(suspended: boolean) { this.observer?.suspend(suspended) }
