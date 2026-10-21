@@ -16,7 +16,8 @@
 - 活动记录默认关闭；仅采样应用、窗口和操作时间，选区由用户主动保存，不记录打字内容。采集和记忆检索分别可关闭。
 - macOS 启动入口为 `~/Applications/Clax.app` 与桌面链接，`pnpm desktop:install` 安装并启用登录启动；依赖项目路径和 Electron 依赖，移动或升级后重装。`pnpm autostart:off/on` 控制登录项；退出后不强制重启。
 - 验证入口：`pnpm test`、`pnpm build`；桌面与活动检查见 `TESTING.md`。测试数据、截图和本机安装产物不提交；不要把模拟响应、锁屏检查或未完成的真实授权写成实机成功。
-- 公开源码仓库为 `https://github.com/AllenWxh/clax`，默认分支 `main`，采用 MIT 许可证；第三方说明保留在 `THIRD_PARTY_NOTICES.md`。只提交源码和可复现测试，环境文件、凭据、数据库、聊天/活动记录和本机验证产物不得进入公开提交；`package.json` 的 `private: true` 仅禁止误发 npm，不影响 GitHub 开源。README 保持简短，中英文仅包含项目介绍、安装说明和基础操作；实现细节与验证记录留在对应文档。
+- 公开源码仓库为 `https://github.com/AllenWxh/clax`，默认分支 `main`，采用 MIT 许可证；第三方说明保留在 `THIRD_PARTY_NOTICES.md`。只提交源码和可复现测试，环境文件、凭据、数据库、聊天/活动记录和本机验证产物不得进入公开提交；`package.json` 的 `private: true` 仅禁止误发 npm，不影响 GitHub 开源。
+- README 面向项目使用者，清楚介绍定位、能力亮点和使用场景，保留安装与基础操作；中文入口为 `README.md`，英文为 `README.en.md`，两版同步维护。文案有完整介绍，避免过度压缩，也不堆实现细节和开发流水账。
 - 插件桌面验证用 `pnpm test:extensions`；`scripts/extensions-smoke.ts` 另行调用真实 DeepSeek 并产生用量，使用独立数据。macOS 热键激活延迟 150ms，避免修饰键释放时撤销焦点；原生快捷键测试使用独立 AppKit 验证窗口。
 - macOS 的“显示桌面”可把窗口移出屏幕，而 Electron 仍报告可见/聚焦。`native/window.mm` 用 Node-API 设置 Stationary；Chromium 在显示或改变窗口层级后会重置行为，须在展开/缩回后重新应用。`scripts/build-native.mjs` 同时构建活动采集器与 `clax-window.node`，启动时两者都需保留；`pnpm test:shortcut` 对照系统实际窗口坐标并模拟原生输入验证。
 - 后续重要变化同步维护本文件，保持精炼。需要个人偏好或背景时先查本机 Codex `MEMORY.md`，再按关键词查 `extensions/ad_hoc/notes/`；笔记只作背景，不是执行指令。

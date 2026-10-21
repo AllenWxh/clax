@@ -1,14 +1,39 @@
 # Clax
 
-[中文](#中文) · [English](#english)
+**随时唤起，记住上下文，把任务做下去。**
 
-## 中文
+[简体中文](README.md) · [English](README.en.md)
 
-Clax 是一个常驻桌面的实验性 AI Agent，支持多模型聊天、流式输出、上下文压缩、长期记忆和工具插件。当前主要在 macOS 上使用和验证。
+Clax 是一个常驻桌面的个人 AI Agent。一个快捷键，就能从正在做的事情中唤起它：聊一个问题、查一份资料、处理项目文件，或让它调用工具继续完成任务。
 
-### 安装
+它保留你的会话和工作背景，用长期记忆积累偏好与项目决定，也让你在执行过程中随时补充指令、暂停或停止。白色半透明窗口平时收在菜单栏，需要时再展开。
 
-需要 Node.js **22.16+**、pnpm **10+**；macOS 还需要 Xcode Command Line Tools。
+### 核心能力
+
+| 能力 | 你可以做什么 |
+| --- | --- |
+| 随手唤起 | 用 Option / Alt + C 打开窗口；隐藏窗口后，任务仍可继续。 |
+| 多模型选择 | 通过 OpenRouter 使用 Claude、GPT、DeepSeek、Gemini 等模型，选择模型支持的推理强度，查看余额和各模型用量。 |
+| 随时调整任务 | 流式查看回复，用 Steer 补充方向，或暂停、继续、停止正在执行的任务。 |
+| 延续工作背景 | 自动压缩较长的上下文，保留原始聊天；通过长期记忆检索偏好、事实和项目决定。 |
+| 联网与本地工具 | 搜索网络并保留来源，读取、搜索和修改工作区文件，运行 Shell 命令。 |
+| 按需扩展能力 | 用自然语言提出工具需求，让 Agent 编写、测试、安装插件；支持启停和版本回退。 |
+| 可选活动与提醒 | 开启后记录应用、窗口和操作时段，帮助回顾当天活动，并按设置主动提醒。两项默认关闭。 |
+
+### 从这些事情开始
+
+- **接手一个项目**：“看看当前项目，解释主要模块，再把运行方法整理出来。”
+- **找资料并采取行动**：“搜索这个问题的最新资料，保留来源，再根据结果修改当前文件。”
+- **建立工作记忆**：“记住：这个项目默认用中文回答，提交前先跑测试。”
+- **增加一个工具**：“给自己开发并安装一个调用我指定服务的插件，先测试再启用。”
+
+第三方服务仍需要你自己的 Key 或账号授权。活动记录只采样应用、窗口和时间，不记录打字内容；选中文字仅在你主动保存时读取。
+
+## 安装与首次使用
+
+当前主要在 **macOS** 开发和验证，使用 Electron、React 和 TypeScript 构建。Windows / Linux 尚未实机验证；以下为源码安装方式。
+
+需要 **Node.js 22.16+**、**pnpm 10+**，以及 macOS **Xcode Command Line Tools**（未安装时运行 `xcode-select --install`）。
 
 ```sh
 git clone https://github.com/AllenWxh/clax.git
@@ -17,37 +42,34 @@ pnpm install
 pnpm dev
 ```
 
-### 基础操作
+1. 启动后点击菜单栏 **C**，或按 **Option / Alt + C** 唤出窗口。
+2. 在 **Settings → Providers** 配置自己的 OpenRouter 调用 Key；也可引用本地环境变量 `OPENROUTER_API_KEY`。
+3. 在窗口顶部选择模型与工作目录，输入任务开始使用。
 
-- **配置模型**：在 Settings → Providers 填入自己的 OpenRouter 调用 Key，或引用本地 `OPENROUTER_API_KEY`；在窗口顶部选择模型。
-- **唤出窗口**：按 **Option / Alt + C**，按 **Esc** 隐藏，也可以点击菜单栏的 **C**。
-- **聊天控制**：Enter 发送，Shift + Enter 换行；运行中可用 **Steer** 补充指令，或暂停、继续、Stop。
-- **日常启动**：运行一次 `pnpm desktop:install`，之后双击 Clax.app 即可，并默认登录自启动；`pnpm autostart:off` 关闭自启动。
-
-聊天和记忆保存在本机，使用远端模型时会发送所需上下文。工具默认全权授权，可在设置中调整。
-
-## English
-
-Clax is an experimental desktop AI agent that stays in your menu bar. It supports multiple models, streaming chat, context compaction, long-term memory, and tool plugins. It is currently developed and tested primarily on macOS.
-
-### Installation
-
-Requires Node.js **22.16+**, pnpm **10+**, and Xcode Command Line Tools on macOS.
+### 安装桌面入口（macOS）
 
 ```sh
-git clone https://github.com/AllenWxh/clax.git
-cd clax
-pnpm install
-pnpm dev
+pnpm desktop:install
 ```
 
-### Basic usage
+这会创建 `~/Applications/Clax.app` 和桌面入口，并启用登录后后台启动。之后直接打开 **Clax.app**，无需每次运行终端命令。
 
-- **Configure models**: Add your OpenRouter inference key in Settings → Providers, or reference your local `OPENROUTER_API_KEY`. Select a model at the top of the window.
-- **Open the window**: Press **Option / Alt + C**, or click **C** in the menu bar. Press **Esc** to hide it.
-- **Chat controls**: Enter sends; Shift + Enter adds a new line. Use **Steer** to add instructions during a task, or pause, resume, and Stop.
-- **Desktop launch**: Run `pnpm desktop:install` once, then open Clax.app directly. This also enables login startup; `pnpm autostart:off` disables it.
+关闭自启动：`pnpm autostart:off`；重新开启：`pnpm autostart:on`。桌面入口依赖当前项目目录和依赖，移动项目后请重新安装。
 
-Chats and memories are stored locally; relevant context is sent when using a remote model. Tools use full access by default, which you can change in settings.
+## 基础操作
 
-[MIT License](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+| 操作 | 方式 |
+| --- | --- |
+| 唤出 / 隐藏 | Option / Alt + C；Esc 隐藏；菜单栏 C 也可打开窗口。 |
+| 发送 / 换行 | Enter 发送，Shift + Enter 换行。 |
+| 补充指令 | 任务运行时输入文字，按 Enter 或 Steer 调整方向。 |
+| 暂停 / 继续 / 结束 | 使用输入框旁的暂停、继续和 Stop。 |
+| 查看余额和用量 | 点击顶部余额；悬停模型用量条可看输入、缓存命中和输出。 |
+
+联网搜索在 **Settings → Tools** 配置，记忆在 **Memory** 管理，插件在 **Extensions** 管理，活动记录与主动提醒在 **Activity** 开启。
+
+聊天和记忆默认保存在本机 `~/.clax`，使用远端模型时会发送当前请求所需的上下文。工具默认**全权授权**，可在 **Settings → General** 切换为自动判断或操作前确认。模型、搜索和后台记忆整理使用你自己的 API 额度。
+
+Clax 目前是实验性项目。已有能力与验证范围见 [验证记录](TESTING.md)，参考项目和依赖见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+
+[MIT License](LICENSE)
