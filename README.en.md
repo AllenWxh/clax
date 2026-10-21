@@ -1,17 +1,20 @@
 # Clax
 
-**An agent close at hand, with memory that carries your work forward.**
+**A Personal Agent Harness that can evolve its own code and capabilities.**
 
 [简体中文](README.md) · [English](README.en.md)
 
-Clax is a personal AI agent that stays on your desktop. A keyboard shortcut brings it into your workflow: ask a question, look something up, work with project files, or let it use tools to carry a task forward.
+Clax is a **personal agent harness that can iterate on its own source code**. It brings model access, tool execution, long-term memory, and task control into an extensible framework, with a personal desktop agent as its interface.
 
-It keeps your conversations and working context, builds lasting memory of preferences and project decisions, and lets you steer, pause, or stop work along the way. Its translucent white window stays out of the way until you need it.
+Set the working directory to the Clax source tree, and you can ask it to **read its own implementation, modify its own source, add tests, and run builds**. It can develop features, change its interface, and improve its runtime in response to your instructions. Changes can be tracked in Git; core source updates take effect after rebuilding and restarting, while tool plugins can be installed and used during a running session.
+
+For everyday work, a keyboard shortcut opens its translucent white window for conversation, research, and project tasks. It keeps your conversations and working context, builds lasting memory of preferences and project decisions, and lets you steer, pause, or stop work along the way.
 
 ### What Clax can do
 
 | Capability | What it means for your work |
 | --- | --- |
+| Iterate on its own source | Work in the Clax source tree to change its core logic, tools, and interface, then run tests and builds for the next version. |
 | Always within reach | Open with Option / Alt + C. Tasks can keep running while the window is hidden. |
 | Your choice of models | Access Claude, GPT, DeepSeek, Gemini, and other models through OpenRouter. Choose supported reasoning levels and check your balance and usage by model. |
 | Control during execution | Read streaming replies, add instructions with Steer, and pause, resume, or stop a task. |
@@ -22,6 +25,7 @@ It keeps your conversations and working context, builds lasting memory of prefer
 
 ### A few ways to start
 
+- **Improve Clax itself:** “Add conversation search to yourself by editing the Clax source, then run tests and verify the build.”
 - **Get oriented in a project:** “Explore this project, explain its main modules, and write down how to run it.”
 - **Research and act:** “Find current information about this issue, keep the sources, and use the findings to update the current file.”
 - **Build working memory:** “Remember: use Chinese for this project, and run tests before committing.”
