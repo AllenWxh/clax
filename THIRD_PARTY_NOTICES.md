@@ -22,6 +22,10 @@ Dependencies are installed unmodified by pnpm; their licenses remain in `node_mo
 | lucide-react | ISC | Icons |
 | diff | BSD-3-Clause | Applying and producing unified diffs |
 | zod | MIT | IPC validation |
+| quickjs-emscripten | MIT | Isolated JavaScript plugin execution |
+| ajv | MIT | Plugin input schema validation |
+| undici | MIT | Controlled HTTPS transport |
+| ipaddr.js | MIT | Plugin destination address checks |
 | Playwright | Apache-2.0 | Desktop integration verification |
 
 SQLite is provided by Node/Electron's built-in `node:sqlite`. Electron's own bundled third-party notices are distributed with its binary. See `pnpm-lock.yaml` for exact dependency versions and the packages' LICENSE files for complete terms.

@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "A local-first, tray-resident desktop AI agent demo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AllenWxh/clax.git"
+  },
+  "homepage": "https://github.com/AllenWxh/clax#readme",
+  "bugs": {
+    "url": "https://github.com/AllenWxh/clax/issues"
+  },
   "type": "module",
   "main": "./out/main/index.js",
   "engines": {

@@ -1,5 +1,7 @@
 # 验证记录
 
+复验入口：`pnpm test`、`pnpm build`，以及 `package.json` 中各 `test:*` 桌面脚本。以下为历史验证记录，`test-results/` 中的本机报告、截图与数据不随源码发布；真实模型 smoke 脚本会消耗调用者的 API 额度。
+
 2026-10-21 取消人为运行配额：
 
 - 删除 16 / 48 步硬结束及强制收尾提示。任务持续到模型完成、真实错误或用户暂停/停止；Steer、取消和完整工具调用/结果配对继续有效。Shell 默认 timeout=0，显式超时仍可用，并避免大于 Node 定时器范围的超时被误解成 1 ms。
@@ -8,7 +10,7 @@
 - 上下文默认跟随模型容量，显式旧预算仍可选。单轮内部也可压缩已完成工具组，完整最新指令与最后一组结果保留；连续实际溢出逐次缩小有效窗口，不重放已执行副作用。输出按每次请求剩余空间分配。实际选中模型目录显示窗口 1,048,576、最大输出 943,718，修复全额预留输出导致输入只剩 256 的边界，新有效输入预算为 681,574。
 - `pnpm test`：79 项通过；覆盖 72 步完成、60 步后取消、超旧大小限制的文件/命令/输出/流帧、25 次插件 HTTP 请求、大源码及输出、单轮压缩保留、连续溢出恢复，以及上述大原生输出的动态分配。`pnpm build`、TypeScript 与 `git diff --check` 通过。
 - `scripts/desktop-test.ts` 的 25 项 Electron 检查通过，实际 HTTP fixture 在同一条指令下完成 60 次工具调用；原暂停/Steer/停止/审批/记忆及默认最大容量与重启保留继续通过。`scripts/extensions-desktop-test.ts` 的 6 项检查通过，包含已构建 Worker 的开发/测试/安装/调用和停用/回退；这些不是付费模型调用。
-- 正式 Clax 已从原入口重启，全权授权、模型容量模式已保存。220 条原消息、已有摘要、所选模型、Provider、加密凭据及其他设置逐项保留；正式用量表行数未变化。备份与最终核对见 `test-results/unlimited-restart-validation.json`。当前本地分支为 `clax/proactive-reminder`，没有配置 Git remote；本次未创建远程仓库或提交代码。
+- 正式 Clax 已从原入口重启，全权授权、模型容量模式已保存。220 条原消息、已有摘要、所选模型、Provider、加密凭据及其他设置逐项保留；正式用量表行数未变化。备份与最终核对见 `test-results/unlimited-restart-validation.json`。
 - 另在隔离数据/工作目录复用现有加密凭据，真实请求当前 `deepseek/deepseek-v4.1-flash`，返回 `CLAX_RUNTIME_OK`，有效输入预算 681,574；接口回传输入 259、输出 8、费用 $0.00008471。结果在 `test-results/unlimited-live-validation.json`。该验证没有写入正式聊天/本机用量，账户余额包含此真实费用。
 
 2026-10-16 OpenRouter 原生优先联网搜索：

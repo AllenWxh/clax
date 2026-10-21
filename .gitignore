@@ -7,5 +7,21 @@ dist/
 .clax*/
 .deskagent*/
 test-results/
+coverage/
 *.log
 .DS_Store
+
+# Local credentials and agent databases must stay outside Git.
+*.key
+*.pem
+*.p12
+*.pfx
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+credentials.json
+/providers.json
+/settings.json
