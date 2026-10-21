@@ -8,6 +8,7 @@ import { DEFAULT_SHORTCUT } from '../shared/shortcuts'
 import { DEFAULT_CONTEXT_CHARS } from '../shared/context'
 import { MemoryStore } from './memory'
 import { ActivityStore, defaultActivity } from './activity-store'
+import { defaultReminder } from './reminder'
 import { ExtensionManager } from './extensions'
 import { UsageStore } from './usage'
 
@@ -23,6 +24,7 @@ const defaults: AppSettings = {
   memory: { enabled: true, autoCapture: true },
   activity: structuredClone(defaultActivity),
   search: { kind: 'none', baseUrl: '' },
+  reminder: structuredClone(defaultReminder),
 }
 
 export function dataHome(userHome = homedir(), env: NodeJS.ProcessEnv = process.env): string {
@@ -54,7 +56,7 @@ export class LocalStore {
     const skillPath = join(home, 'skills', 'coding', 'SKILL.md')
     if (!existsSync(skillPath)) writeFileSync(skillPath, '# Coding\nInspect the project before editing. Keep changes concise. Run focused checks and explain the results.\n')
     const saved = this.readJSON<Partial<AppSettings>>('settings.json', {})
-    this.settings = { ...structuredClone(defaults), ...saved, memory: { ...defaults.memory, ...saved.memory }, activity: { ...structuredClone(defaultActivity), ...saved.activity } }
+    this.settings = { ...structuredClone(defaults), ...saved, memory: { ...defaults.memory, ...saved.memory }, activity: { ...structuredClone(defaultActivity), ...saved.activity }, reminder: { ...structuredClone(defaultReminder), ...saved.reminder } }
     // Upgrade previous defaults; keep independently selected alternatives.
     if (['Alt+Space', 'Control+Shift+Space'].includes(this.settings.globalShortcut)) {
       this.settings.globalShortcut = DEFAULT_SHORTCUT

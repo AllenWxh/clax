@@ -127,6 +127,7 @@ export interface AppSettings {
   memory: { enabled: boolean; autoCapture: boolean }
   activity: { enabled: boolean; useInMemory: boolean; retentionDays: number; excludedApps: string[] }
   search: { kind: 'none' | 'openrouter' | 'tavily' | 'searxng'; baseUrl: string }
+  reminder: { enabled: boolean; intervalMinutes: number; quietStart: string; quietEnd: string }
 }
 export interface ActivityEntry {
   id: string; date: string; kind: 'focus' | 'selection'; startedAt: number; endedAt: number

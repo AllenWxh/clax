@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, safeStorage, shell, screen, nativeTheme, globalShortcut, powerMonitor, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, dialog, safeStorage, shell, screen, nativeTheme, globalShortcut, powerMonitor, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -10,6 +10,7 @@ import { bindTrayActions } from './tray'
 import { SHORTCUTS, shortcutLabel } from '../shared/shortcuts'
 import { REASONING_EFFORTS } from '../shared/models'
 import { defaultActivity } from './activity-store'
+import { defaultReminder } from './reminder'
 import type { AppSettings, DesktopEvent, ProviderInput } from '../shared/types'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
@@ -120,6 +121,8 @@ const settingsSchema = z.object({
   activity: z.object({ enabled: z.boolean(), useInMemory: z.boolean(), retentionDays: z.number().int().min(1).max(365),
     excludedApps: z.array(z.string().trim().min(1).max(200)).max(100) }).default(defaultActivity),
   search: z.object({ kind: z.enum(['none', 'openrouter', 'tavily', 'searxng']), baseUrl: z.string().max(2048) }),
+  reminder: z.object({ enabled: z.boolean(), intervalMinutes: z.number().int().min(10).max(240),
+    quietStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), quietEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }).default(defaultReminder),
 })
 function registerIPC() {
   function handle(name: string, handler: (...args: any[]) => unknown) {
@@ -233,6 +236,8 @@ app.whenReady().then(async () => {
   ])
   bindTrayActions(tray, trayMenu, show)
   service.startActivity(join(dir, '../native/clax-activity'))
+  // Clicking a reminder opens the chat; notifications are skipped where the OS does not support them.
+  service.startReminders(text => { if (!Notification.isSupported()) return; const n = new Notification({ title: 'Clax 提醒', body: text }); n.on('click', show); n.show() })
   const suspended = new Set<string>()
   const suspend = (reason: string, active: boolean) => { if (quitting) return; if (active) suspended.add(reason); else suspended.delete(reason); service.suspendActivity(suspended.size > 0) }
   powerMonitor.on('lock-screen', () => suspend('lock', true)); powerMonitor.on('unlock-screen', () => suspend('lock', false))

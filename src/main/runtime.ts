@@ -8,6 +8,9 @@ import { mergeCitations } from '../shared/citations'
 function message(role: Message['role'], content: string, turnId: string, model?: ModelRef, workspace?: string): Message {
   return { id: randomUUID(), role, content, turnId, model, workspace, createdAt: Date.now(), status: role === 'assistant' ? 'streaming' : 'complete' }
 }
+/** Per-turn model steps; the final step asks for a summary so long tasks end cleanly instead of failing. */
+export const MAX_STEPS = 48
+const FINAL_STEP_NOTE = '\n\nStep budget for this turn is exhausted. Do not call tools. Summarize what was done, what remains, and ask the user to say "继续" to proceed.'
 /** Independent, OpenClaw-inspired loop. No Gateway or third-party runtime internals. */
 export class LocalAgentRuntime implements AgentRuntime {
   id = 'clax'
@@ -23,7 +26,8 @@ export class LocalAgentRuntime implements AgentRuntime {
     let current: Message | undefined
     let recoverOverflow = false, overflowRetries = 0
     try {
-      for (let step = 0; step < 16; step++) {
+      for (let step = 0; step < MAX_STEPS; step++) {
+        const finalStep = step === MAX_STEPS - 1
         signal.throwIfAborted()
         const ref = { ...(session.currentModel ?? initial) }
         const provider = control.provider(ref)
@@ -53,7 +57,7 @@ export class LocalAgentRuntime implements AgentRuntime {
         const unsubscribe = control.onSteering?.(() => { steered = true; streamController.abort() })
         const streamSignal = AbortSignal.any([signal, streamController.signal])
         try {
-          for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
+          for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, system: finalStep ? prepared.system + FINAL_STEP_NOTE : prepared.system, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
             streamSignal.throwIfAborted()
             if (event.type === 'text') { current.content += event.text; emit({ type: 'text_delta', messageId: current.id, delta: event.text }) }
             else if (event.type === 'reasoning') {
@@ -91,7 +95,9 @@ export class LocalAgentRuntime implements AgentRuntime {
           emit({ type: 'tool_started', messageId: current.id, activity })
           let result: string
           try {
-            if (steering.length) {
+            if (finalStep) {
+              activity.status = 'denied'; result = 'Skipped: step budget for this turn is exhausted.'
+            } else if (steering.length) {
               activity.status = 'denied'; result = 'Skipped because the user supplied a new instruction.'
             } else {
               const tool = activeTools.find(t => t.name === call.name)
@@ -121,9 +127,11 @@ export class LocalAgentRuntime implements AgentRuntime {
         }
         steering.push(...control.takeSteering())
         appendSteering(steering)
-        if (!current.toolCalls!.length && !steering.length) { emit({ type: 'turn_finished', status: 'complete' }); return }
+        if (finalStep || (!current.toolCalls!.length && !steering.length)) {
+          if (finalStep && current.toolCalls!.length) emit({ type: 'notice', text: `本轮已用满 ${MAX_STEPS} 步，已暂停在安全位置；回复“继续”即可接着做。` })
+          emit({ type: 'turn_finished', status: 'complete' }); return
+        }
       }
-      throw new Error('Reached 16 tool/model steps. Continue with a new instruction to proceed.')
     } catch (error) {
       const stopped = signal.aborted
       const paused = stopped && signal.reason?.name === 'PauseError'

@@ -9,7 +9,7 @@ import { AgentService } from '../src/main/service'
 import { ProcessManager, createTools } from '../src/main/tools'
 import { commandRisk, inside } from '../src/main/permissions'
 import { fixtureServer } from './fixture-server'
-import { LocalAgentRuntime } from '../src/main/runtime'
+import { LocalAgentRuntime, MAX_STEPS } from '../src/main/runtime'
 import { DEFAULT_SHORTCUT } from '../src/shared/shortcuts'
 import { requestTokens } from '../src/main/context'
 import type { AgentEvent, ModelProvider, ModelRequest, ToolContext, AgentTool, ModelEvent } from '../src/shared/types'
@@ -345,5 +345,27 @@ test('LLM rolling summary preserves recent raw turns and bounded memory context'
     assert.ok(requests.at(-1)!.messages.reduce((n, m) => n + m.content.length, 0) < 5000)
     assert.ok(requestTokens(requests.at(-1)!.system, requests.at(-1)!.messages, requests.at(-1)!.tools) <= f.session.contextState!.budgetTokens)
     assert.equal(f.session.messages.length, 9)
+  } finally { await f.cleanup() }
+})
+test('Step budget ends long tool loops with a summary instead of an error', async () => {
+  const f = await setup(); const requests: ModelRequest[] = [], events: AgentEvent[] = []
+  try {
+    let n = 0
+    const provider: ModelProvider = { id: 'loop', name: 'Loop', listModels: async () => [], capabilities: () => ({ tools: true }),
+      async *stream(request): AsyncIterable<ModelEvent> {
+        requests.push(request)
+        yield { type: 'text', text: `step ${++n}` }
+        yield { type: 'tool_call', call: { id: `c${n}`, name: 'list_directory', arguments: { path: '.' } } } // always wants more tools
+      } }
+    f.session.messages.push({ id: 'u', turnId: 't', role: 'user', content: 'loop forever', createdAt: Date.now(), status: 'complete' })
+    f.session.currentModel = { provider: 'loop', model: 'test' }
+    for await (const event of new LocalAgentRuntime(() => 64000).runTurn(f.session, f.session.currentModel, createTools(f.store, f.processes), f.context.signal,
+      { provider: () => provider, context: () => f.store.context(), takeSteering: () => [], permission: () => 'auto', approve: async () => true })) events.push(event)
+    assert.equal(requests.length, MAX_STEPS)
+    assert.match(requests.at(-1)!.system, /Step budget for this turn is exhausted/)
+    assert.ok(!events.some(e => e.type === 'error'))
+    assert.deepEqual(events.at(-1), { type: 'turn_finished', status: 'complete' })
+    const last = f.session.messages.filter(m => m.role === 'tool').at(-1)!
+    assert.match(last.content, /step budget/) // the final tool call is not executed
   } finally { await f.cleanup() }
 })

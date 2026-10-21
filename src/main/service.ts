@@ -9,6 +9,7 @@ import { LocalAgentRuntime } from './runtime'
 import { createTools, ProcessManager } from './tools'
 import { ActivityObserver } from './activity'
 import { localDate } from './memory'
+import { REMINDER_PROMPT, ReminderScheduler, parseDecision, recentActivity } from './reminder'
 
 interface RunState {
   controller: AbortController
@@ -25,6 +26,7 @@ export class AgentService {
   private credits = new Map<string, Promise<ProviderCredits | null>>()
   private provisioning = new Map<string, Promise<void>>()
   private observer?: ActivityObserver
+  private reminders?: ReminderScheduler
   processes = new ProcessManager()
   currentId: string
   shortcutRegistered = false
@@ -217,6 +219,28 @@ export class AgentService {
       status => this.emit({ type: 'activity', status }))
     this.observer.configure(this.store.settings.activity)
   }
+  startReminders(notify: (text: string) => void) {
+    this.reminders = new ReminderScheduler(() => this.store.settings.reminder, (since, signal) => this.reminderDecision(since, signal), notify)
+    this.reminders.configure()
+  }
+  /** Asks the current model whether to remind; never runs without fresh activity or while a turn is active. */
+  async reminderDecision(since: number, signal: AbortSignal): Promise<string | null> {
+    const session = this.session(this.currentId), ref = session.currentModel
+    if (!ref || this.running.size || !this.store.settings.activity.enabled) return null
+    const items = recentActivity(this.store.activity.report(localDate(), '', undefined, 100).items.filter(i => i.kind === 'focus'), since)
+    if (!items.length) return null
+    const config = this.config(ref); this.memorySecrets(session.workspace)
+    const provider = createProvider(config, this.secret(config, session.workspace))
+    let output = '', reported: Usage | null = null
+    for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, system: REMINDER_PROMPT, tools: [], signal, maxOutputTokens: 300,
+      messages: [{ id: 'reminder', turnId: 'reminder', role: 'user', createdAt: Date.now(), content: JSON.stringify({ now: new Date().toTimeString().slice(0, 5), activity: items }) }] })) {
+      if (event.type === 'text') output += event.text
+      else if (event.type === 'usage') reported = event.usage
+    }
+    // Reminder checks cost tokens too; record them alongside chat usage.
+    if (reported) this.usage(session, reported, ref)
+    return parseDecision(output)
+  }
   suspendActivity(suspended: boolean) { this.observer?.suspend(suspended) }
   activityReport(date = localDate(), query = '', before?: string) { this.memorySecrets(this.session(this.currentId).workspace); return this.store.activity.report(date, query, before) }
   deleteActivity(date: string) { if (this.observer) this.observer.clear(date); else this.store.activity.delete(date); this.emit({ type: 'refresh' }) }
@@ -385,12 +409,13 @@ export class AgentService {
       this.publish(this.session(id), undefined, true)
     }
     if (activityChanged) this.observer?.configure(settings.activity)
+    this.reminders?.configure()
     if (!settings.memory.enabled || !settings.memory.autoCapture) for (const job of this.maintenance.values()) job.controller.abort()
     this.emit({ type: 'refresh' })
   }
   saveMemory(file: MemoryFile, content: string) { this.store.saveMemory(file, content); this.emit({ type: 'refresh' }) }
   async shutdown() {
-    this.observer?.close()
+    this.observer?.close(); this.reminders?.close()
     await Promise.all([...this.maintenance.keys()].map(id => this.cancelMemory(id)))
     await Promise.all([...this.running.keys()].map(id => this.stop(id)))
     await this.processes.shutdown(); this.store.close()
