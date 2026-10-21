@@ -1,0 +1,60 @@
+{
+  "name": "clax",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first, tray-resident desktop AI agent demo",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "postinstall": "install-electron",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm typecheck && electron-vite build && node scripts/build-native.mjs",
+    "start": "node scripts/dev.mjs --production",
+    "desktop:install": "pnpm build && node scripts/install-macos.mjs",
+    "autostart:on": "node scripts/install-macos.mjs --enable-autostart",
+    "autostart:off": "node scripts/install-macos.mjs --disable-autostart",
+    "test": "tsx --test tests/*.test.ts",
+    "test:desktop": "pnpm build && tsx scripts/desktop-test.ts",
+    "test:shortcut": "pnpm build && tsx scripts/shortcut-desktop-test.ts",
+    "test:openrouter": "pnpm build && tsx scripts/openrouter-desktop-test.ts",
+    "test:activity": "pnpm build && tsx scripts/activity-desktop-test.ts",
+    "test:extensions": "pnpm build && tsx scripts/extensions-desktop-test.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "diff": "^9.0.0",
+    "ipaddr.js": "^2.5.0",
+    "lucide-react": "^1.49.0",
+    "quickjs-emscripten": "0.32.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "undici": "^7.30.0",
+    "zod": "^4.6.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "44.5.1",
+    "electron-vite": "5.0.0",
+    "node-api-headers": "1.9.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vite": "7.3.6"
+  }
+}

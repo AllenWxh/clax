@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+out/
+dist/
+.env*
+!.env.example
+.clax*/
+.deskagent*/
+test-results/
+*.log
+.DS_Store

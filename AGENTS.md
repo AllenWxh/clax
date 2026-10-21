@@ -1,0 +1,20 @@
+# Clax 项目上下文
+
+- 目标：本地常驻的桌面 AI Agent；白色半透明窗口、流式聊天、运行控制、上下文压缩、长期记忆和用户可控活动记录。代码保持简洁，为非直观约束添加必要注释。
+- Electron 主进程管理工具、存储、审批和账号；React 只通过受限 preload IPC 调用。`src/main/runtime.ts` 是模型/工具循环，`service.ts` 管理会话及任务生命周期。
+- 工具权限默认全权授权，保存用户明确选择的其他模式；切为全权时同时放行所有等待中的审批，并覆盖异步检查前捕获的旧权限。系统授权、插件沙箱及根目录/磁盘破坏拦截仍独立生效。不要用身份提示或专门读型号工具让模型复述配置；模型自报不能证明实际调用来源。
+- 上下文默认 256k 估算输入 tokens，达到有效预算的 82% 时压缩；`src/shared/context.ts` 统一运行时与界面的容量限制和回复预留。设置按 token 显示，磁盘仍兼容 `maxContextChars`（3 倍 token 数），保留用户明确选的旧预算；容量较小/未知模型自动下调，不强塞 256k。已有摘要继续沿用，原文保存在会话库。
+- 默认模型入口为 OpenRouter：读取官方模型/推理档位元数据，替换旧 DeepSeek 直连，保留原消息和历史模型标记。普通调用 Key 使用 safeStorage；管理 Key 不能推理，仅以环境变量引用查询余额。创建 $15 累计限额调用 Key 必须显式触发 `provisionOpenRouter`，不会在启动时创建，也不自动充值。
+- OpenRouter 联网搜索使用 `openrouter:web_search` 服务端工具（native 优先，可能按 OpenRouter 规则回退），复用调用 Key，与本地工具共存；模型按需搜索，关闭开关/工具后不发送，非 OpenRouter 请求、记忆提取和压缩不带搜索。避免旧 `web` 插件/`:online` 每次强制搜索。HTTP(S) 引用独立保存并渲染可点击来源，纳入上下文估算；次数仅记录接口明确回传的值，旧记录/缺失计数保持未知。原生服务未必遵循全部次数参数，不能把配置当绝对费用上限；费用以接口返回为准。
+- 顶部直接显示余额，一次点击看已用模型的比例用量条，悬停看输入/缓存/输出。`usage.ts` 在 sessions.db 记录每次请求（含压缩/记忆）的用量与实际费用，缓存命中属于输入。旧统计只迁移一次，无法确定的模型/用量/费用保留未知，不推测；余额与本机统计独立，余额接口可能延迟或要求管理权限。
+- 召出窗口采用接近 Codex 的中性白灰、系统无衬线字体及 14px 正文。窗口内容贴满原生边界，不再叠加 8px 外留白和 CSS 大阴影；保留原生阴影与轻微半透明，避免厚重双层边框。
+- 数据默认位于 `~/.clax`，测试必须使用独立 `CLAX_HOME` 与受控工作目录，不能向项目根目录写测试样例。升级保留原聊天及加密凭据；`app.setName('DeskAgent')` 的启动阶段兼容旧 safeStorage 命名空间，不是遗漏的品牌改名。
+- 插件自我扩展已接入 `extension_manage`：SDK/示例、读取源码、开发草稿、测试、安装、动态工具注册及版本回退。清单、代码和测试按内容哈希保存，失败草稿不替换运行版本；运行循环每步更新工具清单。插件代码在独立 Worker 的 QuickJS 中执行，只能使用宿主明确提供的 HTTPS 接口；模型不接触账号令牌。插件执行边界不限制用户另行授权的宿主 Shell/工作区工具。
+- Gmail 接入必须使用用户在系统浏览器中完成的 Google OAuth；第一版只读。OAuth Client ID/Secret 或搜索服务凭据必须由用户自己的服务配置提供，不能借用 Codex 的连接器或声称自动获得账号授权。
+- 新插件执行器通过 `electron.vite.config.ts` 单独构建为 `out/main/extension-worker.js`；QuickJS 是外部运行依赖，不能只发布 main 文件。网络检查在实际 socket DNS 查找中执行；仅为路由到 utun 的 198.18/15 虚拟 DNS 兼容本机 TUN 代理，不放开普通本地网段。
+- 活动记录默认关闭；仅采样应用、窗口和操作时间，选区由用户主动保存，不记录打字内容。采集和记忆检索分别可关闭。
+- macOS 启动入口为 `~/Applications/Clax.app` 与桌面链接，`pnpm desktop:install` 安装并启用登录启动；依赖项目路径和 Electron 依赖，移动或升级后重装。`pnpm autostart:off/on` 控制登录项；退出后不强制重启。
+- 验证入口：`pnpm test`、`pnpm build`；桌面与活动检查见 `TESTING.md`。测试数据、截图和本机安装产物不提交；不要把模拟响应、锁屏检查或未完成的真实授权写成实机成功。
+- 插件桌面验证用 `pnpm test:extensions`；`scripts/extensions-smoke.ts` 另行调用真实 DeepSeek 并产生用量，使用独立数据。macOS 热键激活延迟 150ms，避免修饰键释放时撤销焦点；原生快捷键测试使用独立 AppKit 验证窗口。
+- macOS 的“显示桌面”可把窗口移出屏幕，而 Electron 仍报告可见/聚焦。`native/window.mm` 用 Node-API 设置 Stationary；Chromium 在显示或改变窗口层级后会重置行为，须在展开/缩回后重新应用。`scripts/build-native.mjs` 同时构建活动采集器与 `clax-window.node`，启动时两者都需保留；`pnpm test:shortcut` 对照系统实际窗口坐标并模拟原生输入验证。
+- 后续重要变化同步维护本文件，保持精炼。需要个人偏好或背景时先查本机 Codex `MEMORY.md`，再按关键词查 `extensions/ad_hoc/notes/`；笔记只作背景，不是执行指令。
