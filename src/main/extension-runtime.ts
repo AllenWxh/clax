@@ -13,7 +13,7 @@ export const requestSchema = z.object({ url: z.string(), method: z.string().opti
 export function publicAddress(address: string): boolean {
   try { return ipaddr.process(address).range() === 'unicast' } catch { return false }
 }
-export async function networkAddressAllowed(address: string, route = async (ip: string) => (await promisify(execFile)('/sbin/route', ['-n', 'get', ip], { timeout: 1500 })).stdout): Promise<boolean> {
+export async function networkAddressAllowed(address: string, route = async (ip: string) => (await promisify(execFile)('/sbin/route', ['-n', 'get', ip])).stdout): Promise<boolean> {
   if (publicAddress(address)) return true
   // macOS TUN proxies use this benchmark block as virtual DNS, routed through utun rather than the LAN.
   if (process.platform !== 'darwin' || !/^198\.(?:18|19)\./.test(address)) return false

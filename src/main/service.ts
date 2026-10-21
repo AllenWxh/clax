@@ -130,7 +130,7 @@ export class AgentService {
     this.config(session.currentModel)
     session.paused = false
     session.messages.push({ id: randomUUID(), turnId: randomUUID(), role: 'user', content: text, createdAt: Date.now(), workspace: session.workspace })
-    if (session.title === 'New session') session.title = text.slice(0, 55)
+    if (session.title === 'New session') session.title = text
     const run: RunState = { controller: new AbortController(), approvals: new Map() }
     this.running.set(id, run); this.publish(session, undefined, true)
     run.done = this.run(session, run)
@@ -181,7 +181,7 @@ export class AgentService {
       if (config.kind === 'mock') { this.store.memory.journal(session, through); session.memoryCapturedCount = through; return }
       session.memoryCapturedCount = await this.store.memory.capture(session, through, createProvider(config, this.secret(config, session.workspace)), ref, signal,
         usage => { const actual = this.session(session.id); this.usage(actual, usage, ref); this.publish(actual, { type: 'usage_updated', usage, model: ref }, true) },
-        config.models.find(m => m.id === ref.model)?.contextWindow ?? config.contextWindow)
+        config.models.find(m => m.id === ref.model)?.contextWindow ?? config.contextWindow, config.models.find(m => m.id === ref.model)?.maxOutputTokens)
       this.store.memory.lastCaptureError = undefined
     } catch (error) {
       if (signal.aborted) throw error
@@ -211,7 +211,7 @@ export class AgentService {
     if (!session.paused && last?.role === 'assistant' && (!last.status || last.status === 'complete')) this.scheduleMemory(session)
   }
   async waitForMemory(id = this.currentId) { await this.maintenance.get(id)?.done }
-  searchMemory(query: string) { this.memorySecrets(this.session(this.currentId).workspace); return this.store.memory.search(query, this.session(this.currentId).workspace, 12) }
+  searchMemory(query: string) { this.memorySecrets(this.session(this.currentId).workspace); return this.store.memory.search(query, this.session(this.currentId).workspace) }
   readMemory(path: string, startLine?: number, lines?: number) { this.memorySecrets(this.session(this.currentId).workspace); return this.store.memory.read(path, this.session(this.currentId).workspace, startLine, lines) }
   forgetMemory(path: string) { this.store.memory.forget(path, this.session(this.currentId).workspace); this.emit({ type: 'refresh' }) }
   startActivity(helper: string) {
@@ -229,12 +229,12 @@ export class AgentService {
     const session = this.session(this.currentId), ref = session.currentModel
     // Same gate as chat recall: desktop observations reach a model only via the user's activity switches.
     if (!ref || this.running.size || !this.store.settings.activity.enabled || !this.store.settings.activity.useInMemory) return null
-    const items = recentActivity(this.store.activity.report(localDate(), '', undefined, 100).items.filter(i => i.kind === 'focus'), since)
+    const items = recentActivity(this.store.activity.report(localDate()).items.filter(i => i.kind === 'focus'), since)
     if (!items.length) return null
     const config = this.config(ref); this.memorySecrets(session.workspace)
     const provider = createProvider(config, this.secret(config, session.workspace))
     let output = '', reported: Usage | null = null
-    for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, system: REMINDER_PROMPT, tools: [], signal, maxOutputTokens: 300,
+    for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, system: REMINDER_PROMPT, tools: [], signal,
       messages: [{ id: 'reminder', turnId: 'reminder', role: 'user', createdAt: Date.now(), content: JSON.stringify({ now: new Date().toTimeString().slice(0, 5), activity: items }) }] })) {
       if (event.type === 'text') output += event.text
       else if (event.type === 'usage') reported = event.usage
@@ -336,7 +336,7 @@ export class AgentService {
     const config = this.inputConfig(input)
     const key = input.apiKeyEnv ? environmentKey(input.apiKeyEnv, this.session(this.currentId).workspace) : input.apiKey || this.store.getSecret(config.id)
     if (input.apiKeyEnv && !key) throw new Error(`Environment variable ${input.apiKeyEnv} was not found in this process or workspace .env/.env.local`)
-    const models = await createProvider(config, key).listModels(AbortSignal.timeout(20000))
+    const models = await createProvider(config, key).listModels()
     this.catalogs.set(`${config.kind}:${config.baseUrl}`, models)
     return models
   }
@@ -352,7 +352,7 @@ export class AgentService {
   async refreshProvider(id: string) {
     const config = this.store.providers.find(p => p.id === id)
     if (!config) throw new Error('Provider not found')
-    config.models = await createProvider(config, this.secret(config)).listModels(AbortSignal.timeout(20000))
+    config.models = await createProvider(config, this.secret(config)).listModels()
     this.store.saveProviders(this.store.providers); this.emit({ type: 'refresh' })
   }
   async providerCredits(id: string) {
@@ -366,31 +366,31 @@ export class AgentService {
     try { return await job } finally { this.credits.delete(id) }
   }
   usageSummary() { return this.store.usage.summary() }
-  async provisionOpenRouter(id: string) {
+  async provisionOpenRouter(id: string, limit: number | null = null) {
     const pending = this.provisioning.get(id)
     if (pending) return pending
-    const job = this.createRouterKey(id)
+    const job = this.createRouterKey(id, limit)
     this.provisioning.set(id, job)
     try { await job } finally { this.provisioning.delete(id) }
   }
-  private async createRouterKey(id: string) {
+  private async createRouterKey(id: string, limit: number | null) {
     const config = this.store.providers.find(p => p.id === id)
     if (config?.kind !== 'openrouter' || config.baseUrl !== 'https://openrouter.ai/api/v1') throw new Error('只允许为官方 OpenRouter 入口创建调用 Key。')
     if (!this.store.secureStorage) throw new Error('需要系统加密存储可用后才能创建调用 Key。')
     if (this.running.size) throw new Error('请先停止正在运行的任务。')
     const management = this.secret(config)
-    const info = (await (await providerRequest(endpoint(config.baseUrl, 'key'), management, { signal: AbortSignal.timeout(20000) })).json() as any).data
+    const info = (await (await providerRequest(endpoint(config.baseUrl, 'key'), management)).json() as any).data
     if (!info.is_management_key && !info.is_provisioning_key) return
     if (!config.apiKeyEnv) throw new Error('请通过本地环境变量提供管理 Key。')
-    const created = await (await providerRequest(endpoint(config.baseUrl, 'keys'), management, { method: 'POST', signal: AbortSignal.timeout(20000),
-      body: JSON.stringify({ name: 'Clax', limit: 15, limit_reset: null, include_byok_in_limit: true }) })).json() as any
+    const created = await (await providerRequest(endpoint(config.baseUrl, 'keys'), management, { method: 'POST',
+      body: JSON.stringify({ name: 'Clax', ...(limit === null ? {} : { limit }), limit_reset: null, include_byok_in_limit: true }) })).json() as any
     if (typeof created.key !== 'string' || !created.key.startsWith('sk-or-')) throw new Error('OpenRouter 未返回调用 Key，请检查账号中的 Key 列表。')
     try {
       this.store.setSecret(id, created.key)
       this.store.saveProviders(this.store.providers.map(p => p.id === id ? { ...config, apiKeyEnv: undefined, creditsKeyEnv: config.apiKeyEnv } : p))
     } catch (error) {
       // Do not leave a newly issued credential active if local secure persistence fails.
-      if (typeof created.data?.hash === 'string') await providerRequest(endpoint(config.baseUrl, `keys/${encodeURIComponent(created.data.hash)}`), management, { method: 'DELETE', signal: AbortSignal.timeout(20000) })
+      if (typeof created.data?.hash === 'string') await providerRequest(endpoint(config.baseUrl, `keys/${encodeURIComponent(created.data.hash)}`), management, { method: 'DELETE' })
       throw error
     }
     this.credits.delete(id); this.emit({ type: 'refresh' })

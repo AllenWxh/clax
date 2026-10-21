@@ -5,8 +5,10 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 // Explicit opt-in: this action creates a real account credential, never a test fixture.
-if (process.env.CLAX_CREATE_OPENROUTER_KEY !== '1') throw new Error('Set CLAX_CREATE_OPENROUTER_KEY=1 only after authorizing creation of a $15 Clax key')
+if (process.env.CLAX_CREATE_OPENROUTER_KEY !== '1') throw new Error('Set CLAX_CREATE_OPENROUTER_KEY=1 only after authorizing creation of a Clax key')
 if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is not exported')
+const limit = process.env.CLAX_OPENROUTER_KEY_LIMIT?.trim() ? Number(process.env.CLAX_OPENROUTER_KEY_LIMIT) : null
+if (limit !== null && (!Number.isFinite(limit) || limit < 0)) throw new Error('CLAX_OPENROUTER_KEY_LIMIT must be a nonnegative USD amount; omit it for no limit')
 const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), CLAX_HOME: join(homedir(), '.clax'), CLAX_TEST: '1', CLAX_SHOW: '0' }
 delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
 const desktop = await electron.launch({ executablePath: createRequire(import.meta.url)('electron'), args: ['.'], env, cwd: resolve('.') })
@@ -16,10 +18,10 @@ try {
   await page.evaluate(() => window.clax.importOpenRouter())
   let state = await page.evaluate(() => window.clax.bootstrap())
   const provider = state.providers.find(p => p.kind === 'openrouter')!
-  await page.evaluate(id => window.clax.provisionOpenRouter(id), provider.id)
+  await page.evaluate(({ id, limit }) => window.clax.provisionOpenRouter(id, limit), { id: provider.id, limit })
   state = await page.evaluate(() => window.clax.bootstrap())
   const current = state.providers.find(p => p.id === provider.id)!, credits = await page.evaluate(id => window.clax.providerCredits(id), provider.id)
-  expect(credits?.managementKey).toBe(false); expect(credits?.keyLimit).toBe(15)
+  expect(credits?.managementKey).toBe(false); expect(credits?.keyLimit).toBe(limit)
   expect(current.apiKeyEnv).toBeUndefined(); expect(current.creditsKeyEnv).toBe('OPENROUTER_API_KEY')
   expect(current.hasKey).toBe(true)
   const report = { date: new Date().toISOString(), productionHome: state.storagePath, provider: current.name, models: current.models.length, encryptedInferenceKey: true, managementKeyForCreditsOnly: true, credits }

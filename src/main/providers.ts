@@ -3,6 +3,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Message, ModelCapabilities, ModelEvent, ModelInfo, ModelProvider, ModelRequest, ProviderConfig, ProviderCredits, ToolCall, Usage } from '../shared/types'
 import { REASONING_EFFORTS } from '../shared/models'
 import { parseCitations } from '../shared/citations'
+import { contextLimits } from '../shared/context'
+import { requestTokens } from './context'
 
 export function endpoint(base: string, path: string) { return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}` }
 
@@ -12,7 +14,7 @@ export async function providerRequest(url: string, key: string, options: Request
   if (options.body) headers.set('Content-Type', 'application/json')
   const response = await fetch(url, { ...options, headers })
   if (!response.ok) {
-    let detail = (await response.text()).slice(0, 1400)
+    let detail = await response.text()
     if (key) detail = detail.split(key).join('[redacted]')
     throw new Error(`Provider HTTP ${response.status}: ${detail || response.statusText}`)
   }
@@ -94,7 +96,7 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
   }
   async getUsage(): Promise<ProviderCredits | null> {
     if (this.config.kind !== 'openrouter') return null
-    const get = async (path: string) => (await (await request(endpoint(this.config.baseUrl, path), path === 'credits' ? this.creditsKey : this.key, { signal: AbortSignal.timeout(20000) })).json() as any).data
+    const get = async (path: string) => (await (await request(endpoint(this.config.baseUrl, path), path === 'credits' ? this.creditsKey : this.key)).json() as any).data
     const [key, account] = await Promise.allSettled([get('key'), get('credits')])
     if (key.status === 'rejected' && account.status === 'rejected') throw key.reason
     const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -113,6 +115,7 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
     const response = await request(endpoint(this.config.baseUrl, 'chat/completions'), this.key, {
       method: 'POST', signal: input.signal, body: JSON.stringify({
         model: input.model, messages: chatMessages(input.system, input.messages, this.id, input.model, router), stream: true, stream_options: { include_usage: true },
+        ...(router && input.sessionId ? { session_id: input.sessionId } : {}),
         ...(router && input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
         ...(input.maxOutputTokens ? this.config.kind === 'openai' ? { max_completion_tokens: input.maxOutputTokens } : { max_tokens: input.maxOutputTokens } : {}),
         ...(tools.length ? { tools } : {}),
@@ -167,8 +170,11 @@ export class AnthropicProvider extends BaseProvider implements ModelProvider {
       if (messages.at(-1)?.role === role) messages.at(-1)!.content.push(...blocks)
       else messages.push({ role, content: blocks })
     }
+    const model = this.config.models.find(m => m.id === input.model), limits = contextLimits(0, model?.contextWindow ?? this.config.contextWindow, model?.maxOutputTokens)
+    // This API requires max_tokens; derive it from model metadata and the remaining window.
+    const maximum = Math.min(limits.nativeOutput ?? Infinity, Math.max(1, Math.floor(limits.window * 0.9) - requestTokens(input.system, input.messages, input.tools)))
     const response = await request(endpoint(this.config.baseUrl, 'messages'), '', { method: 'POST', signal: input.signal,
-      headers: this.headers(), body: JSON.stringify({ model: input.model, system: input.system, messages, max_tokens: input.maxOutputTokens ?? 8192, stream: true,
+      headers: this.headers(), body: JSON.stringify({ model: input.model, system: input.system, messages, max_tokens: input.maxOutputTokens ?? maximum, stream: true,
         ...(input.tools.length ? { tools: input.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) } : {}) }) })
     const calls = new Map<number, { id: string; name: string; input: Record<string, unknown>; json: string }>()
     let usage: Usage | undefined
@@ -275,7 +281,7 @@ export class MockProvider extends BaseProvider implements ModelProvider {
       if (call) { yield { type: 'text', text: '我先检查一下。\n' }; await delay(100, undefined, { signal: input.signal }); yield { type: 'tool_call', call }; return }
     }
     const reply = results.length
-      ? `已完成，以下是本机工具的真实结果：\n\n\`\`\`text\n${results.map(m => m.content).join('\n').slice(0, 8000)}\n\`\`\`\n\n*Demo Provider 使用脚本回复，工具实际在本机执行。*`
+      ? `已完成，以下是本机工具的真实结果：\n\n\`\`\`text\n${results.map(m => m.content).join('\n')}\n\`\`\`\n\n*Demo Provider 使用脚本回复，工具实际在本机执行。*`
       : input.tools.length ? `收到：${text}\n\n当前是 **${input.model}** 演示模型。试试「列出当前项目文件」或「运行 node --version」。连接真实 Provider 后可以自由提问。`
         : 'Earlier conversation covered local development, workspace inspection and tool results. Keep following the user’s latest instructions.'
     for (let i = 0; i < reply.length; i += 9) { input.signal.throwIfAborted(); yield { type: 'text', text: reply.slice(i, i + 9) }; await delay(15, undefined, { signal: input.signal }) }

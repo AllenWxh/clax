@@ -178,6 +178,7 @@ export interface ToolDefinition {
   available?: boolean
 }
 export interface ModelRequest {
+  sessionId?: string
   model: string
   system: string
   messages: Message[]
@@ -261,7 +262,7 @@ export type DesktopEvent =
   | { type: 'activity'; status: ActivityStatus }
 
 export interface DesktopAPI {
-  provisionOpenRouter(id: string): Promise<void>
+  provisionOpenRouter(id: string, limit?: number | null): Promise<void>
   providerCredits(id: string): Promise<ProviderCredits | null>
   usageSummary(): Promise<UsageSummary>
   importOpenRouter(): Promise<void>

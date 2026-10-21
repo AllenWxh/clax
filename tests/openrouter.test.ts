@@ -81,7 +81,7 @@ test('Reasoning deltas preserve encrypted data and do not mix distinct indexes',
   const value = mergeReasoning([{ type: 'reasoning.encrypted', index: 0, data: 'abc' }], [{ type: 'reasoning.encrypted', index: 0, data: 'def' }, { type: 'reasoning.text', index: 1, text: 'x' }])
   assert.equal(value[0]!.data, 'abcdef'); assert.equal(value[1]!.text, 'x')
 })
-test('Authorized key provisioning creates one $15 inference key and separates management-only balance access', async () => {
+for (const limit of [15, null]) test(`Authorized key provisioning honors ${limit === null ? 'no specified limit' : 'a chosen budget'} and separates management credentials`, async () => {
   const root = await mkdtemp(join(tmpdir(), 'clax-router-key-')), previous = process.env.CLAX_MANAGEMENT_TEST_KEY, fetch = globalThis.fetch
   process.env.CLAX_MANAGEMENT_TEST_KEY = 'fixture-management'
   let created = 0
@@ -92,7 +92,7 @@ test('Authorized key provisioning creates one $15 inference key and separates ma
     if (path.endsWith('/key')) return Response.json({ data: { is_management_key: key.includes('fixture-management'), limit: key.includes('fixture-management') ? null : 15, limit_remaining: 15, usage: 0 } })
     if (path.endsWith('/credits')) return Response.json({ data: { total_credits: 15, total_usage: 0 } })
     if (path.endsWith('/keys') && request.method === 'POST') {
-      created++; assert.deepEqual(await request.json(), { name: 'Clax', limit: 15, limit_reset: null, include_byok_in_limit: true })
+      created++; assert.deepEqual(await request.json(), { name: 'Clax', ...(limit === null ? {} : { limit }), limit_reset: null, include_byok_in_limit: true })
       return Response.json({ key: 'sk-or-fixture-private', data: { hash: 'fixture-hash' } }, { status: 201 })
     }
     throw new Error('Unexpected test request')
@@ -102,8 +102,8 @@ test('Authorized key provisioning creates one $15 inference key and separates ma
   const service = new AgentService(new LocalStore(root, testCodec, root), () => {})
   try {
     const p = await service.saveProvider({ name: 'OpenRouter', kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'CLAX_MANAGEMENT_TEST_KEY', toolCalling: true })
-    await Promise.all([service.provisionOpenRouter(p.id), service.provisionOpenRouter(p.id)])
-    await service.provisionOpenRouter(p.id)
+    await Promise.all([service.provisionOpenRouter(p.id, limit), service.provisionOpenRouter(p.id, limit)])
+    await service.provisionOpenRouter(p.id, limit)
     assert.equal(created, 1)
     const stored = (await service.bootstrap()).providers[0]!
     assert.equal(stored.apiKeyEnv, undefined); assert.equal(stored.creditsKeyEnv, 'CLAX_MANAGEMENT_TEST_KEY')
@@ -118,4 +118,15 @@ test('Authorized key provisioning creates one $15 inference key and separates ma
     if (previous === undefined) delete process.env.CLAX_MANAGEMENT_TEST_KEY; else process.env.CLAX_MANAGEMENT_TEST_KEY = previous
     await service.shutdown(); await rm(root, { recursive: true, force: true })
   }
+})
+
+test('OpenRouter uses explicit session affinity without imposing it on compatible endpoints', async () => {
+  const f = await fixture()
+  try {
+    const request: ModelRequest = { sessionId: 'stable-session', model: 'fixture', system: 'Stable system', messages: [], tools: [], signal: new AbortController().signal }
+    for await (const _ of new CompatibleProvider(config(f.url), 'fake-key').stream(request)) { /* real HTTP fixture */ }
+    assert.equal(f.calls.at(-1).session_id, 'stable-session')
+    for await (const _ of new CompatibleProvider({ ...config(f.url), kind: 'compatible' }, 'fake-key').stream(request)) { /* same adapter, ordinary endpoint */ }
+    assert.equal(f.calls.at(-1).session_id, undefined)
+  } finally { await f.close() }
 })

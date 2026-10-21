@@ -6,13 +6,13 @@ import type { ActivityStatus, AppSettings } from '../shared/types'
 import { ActivityStore } from './activity-store'
 
 const observation = z.object({
-  time: z.number().finite().nonnegative(), app: z.string().max(500), bundleId: z.string().max(500),
-  window: z.string().max(2000), idleSeconds: z.number().finite().nonnegative(),
+  time: z.number().finite().nonnegative(), app: z.string(), bundleId: z.string(),
+  window: z.string(), idleSeconds: z.number().finite().nonnegative(),
 })
 const frameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), generation: z.number().int(), trusted: z.boolean() }),
   z.object({ type: z.literal('sample'), generation: z.number().int(), trusted: z.boolean(), blocked: z.boolean().optional(), locked: z.boolean().optional() }).extend(observation.partial().shape),
-  z.object({ type: z.literal('selection'), generation: z.number().int(), id: z.string(), error: z.string().optional(), text: z.string().max(8000).optional() }).extend(observation.partial().shape),
+  z.object({ type: z.literal('selection'), generation: z.number().int(), id: z.string(), error: z.string().optional(), text: z.string().optional() }).extend(observation.partial().shape),
 ])
 
 /** Native collection is user-controlled; models receive only already saved observations. */
@@ -21,7 +21,7 @@ export class ActivityObserver {
   private generation = 0
   private suspended = false
   private settings: AppSettings['activity']
-  private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
   private state: ActivityStatus
   private prunedDay = ''
   constructor(private store: ActivityStore, settings: AppSettings['activity'], private helper: string,
@@ -48,7 +48,7 @@ export class ActivityObserver {
     const child = this.launch(); this.child = child
     const reader = createInterface({ input: child.stdout })
     reader.on('line', line => {
-      if (this.child !== child || line.length > 25000) return
+      if (this.child !== child) return
       try { this.receive(frameSchema.parse(JSON.parse(line))) }
       catch { this.store.boundary(); this.update({ state: 'error', error: '活动记录器返回了无效数据。' }) }
     })
@@ -61,7 +61,7 @@ export class ActivityObserver {
       this.child = undefined; this.store.boundary(); this.cancelSelections()
       this.update({ state: 'error', error: '活动记录器已退出；关闭再开启活动记录可重试。' })
     })
-    child.stdin.on('error', () => { /* Selection requests also have a bounded timeout. */ })
+    child.stdin.on('error', () => { if (this.child === child) { this.cancelSelections(); this.update({ state: 'error', error: '无法向活动记录器发送请求。' }) } })
   }
   private send(value: unknown) { this.child?.stdin.write(`${JSON.stringify(value)}\n`) }
   private sendConfiguration() {
@@ -75,7 +75,7 @@ export class ActivityObserver {
     if (frame.type === 'selection') {
       const pending = this.pending.get(frame.id)
       if (!pending) return
-      this.pending.delete(frame.id); clearTimeout(pending.timer)
+      this.pending.delete(frame.id)
       try {
         if (frame.error) throw new Error(frame.error)
         this.store.selection(observation.parse(frame), frame.text ?? '', this.settings); pending.resolve()
@@ -93,8 +93,7 @@ export class ActivityObserver {
     if (!this.settings.enabled || this.suspended || !this.child) return Promise.reject(new Error('请先开启活动记录。'))
     const id = randomUUID()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('读取选中文字超时，请重试。')) }, 8000)
-      this.pending.set(id, { resolve, reject, timer }); this.send({ type: 'selection', id })
+      this.pending.set(id, { resolve, reject }); this.send({ type: 'selection', id })
     })
   }
   requestPermission() {
@@ -102,7 +101,7 @@ export class ActivityObserver {
     this.startSource(); this.sendConfiguration(); this.send({ type: 'permission' })
   }
   private cancelSelections() {
-    for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('活动记录已暂停或配置已更改。')) }
+    for (const request of this.pending.values()) { request.reject(new Error('活动记录已暂停或配置已更改。')) }
     this.pending.clear()
   }
   private stopSource() { const child = this.child; this.child = undefined; child?.stdin.end(); child?.kill() }

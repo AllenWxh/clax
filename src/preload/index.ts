@@ -3,7 +3,7 @@ import type { DesktopAPI, DesktopEvent } from '../shared/types'
 
 const invoke = (name: string, ...args: unknown[]) => ipcRenderer.invoke(`clax:${name}`, ...args)
 const api: DesktopAPI = {
-  provisionOpenRouter: id => invoke('provisionOpenRouter', id),
+  provisionOpenRouter: (id, limit) => invoke('provisionOpenRouter', id, limit),
   importOpenRouter: () => invoke('importOpenRouter'), providerCredits: id => invoke('providerCredits', id), usageSummary: () => invoke('usageSummary'),
   extensionAction: (id, action) => invoke('extensionAction', id, action), connectExtension: (id, input) => invoke('connectExtension', id, input),
   disconnectExtension: id => invoke('disconnectExtension', id), openExtensionsFolder: () => invoke('openExtensionsFolder'),

@@ -9,16 +9,16 @@ import type { ExtensionPackage, ExtensionInfo, ExtensionManifest } from '../shar
 import { runExtension, validateRequest, publicRequest, requestSchema } from './extension-runtime'
 import { authorizeGoogle, refreshGoogle, type GoogleClient, type GoogleTokens } from './extension-oauth'
 
-const idSchema = z.string().regex(/^[a-z][a-z0-9-]{0,19}$/), hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
+const idSchema = z.string().regex(/^[a-z][a-z0-9-]*$/), hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const manifestSchema = z.object({
   id: idSchema, version: z.string().regex(/^\d+\.\d+\.\d+$/), name: z.string().min(1), description: z.string().min(1),
   hosts: z.array(z.string().regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/)),
-  methods: z.array(z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])).min(1).max(5),
-  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,23}$/), description: z.string().min(1), inputSchema: z.record(z.string(), z.unknown()) }).strict()).min(1),
-  auth: z.discriminatedUnion('type', [z.object({ type: z.literal('google-readonly') }).strict(), z.object({ type: z.literal('api-key'), header: z.string().regex(/^(?:Authorization|X-[A-Za-z0-9-]+)$/), prefix: z.string().max(40).regex(/^[\x20-\x7e]*$/) }).strict()]).optional(),
+  methods: z.array(z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])).min(1),
+  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]*$/), description: z.string().min(1), inputSchema: z.record(z.string(), z.unknown()) }).strict()).min(1),
+  auth: z.discriminatedUnion('type', [z.object({ type: z.literal('google-readonly') }).strict(), z.object({ type: z.literal('api-key'), header: z.string().regex(/^(?:Authorization|X-[A-Za-z0-9-]+)$/), prefix: z.string().regex(/^[\x20-\x7e]*$/) }).strict()]).optional(),
 }).strict()
 export const extensionPackageSchema = z.object({ manifest: manifestSchema, code: z.string().min(1), tests: z.array(z.object({
-  tool: z.string().max(24), input: z.record(z.string(), z.unknown()), expected: z.unknown(), responses: z.array(z.object({ request: requestSchema,
+  tool: z.string(), input: z.record(z.string(), z.unknown()), expected: z.unknown(), responses: z.array(z.object({ request: requestSchema,
     response: z.object({ status: z.number().int().min(100).max(599), body: z.string() }).strict() }).strict()),
 }).strict()).min(1) }).strict()
 const entrySchema = z.object({ current: hashSchema.optional(), previous: hashSchema.optional(), draft: hashSchema.optional(), tested: hashSchema.optional(), enabled: z.boolean().default(false) })
@@ -129,7 +129,7 @@ export class ExtensionManager {
         if (!fixture || !isDeepStrictEqual(parsed, validateRequest(value.manifest, fixture.request))) throw new Error('Plugin test made an unexpected HTTP request')
         return fixture.response
       })
-      if (!isDeepStrictEqual(output, test.expected) || fixtures.length) throw new Error(`Plugin test failed: ${test.tool}; actual=${JSON.stringify(output)?.slice(0, 1000)}`)
+      if (!isDeepStrictEqual(output, test.expected) || fixtures.length) throw new Error(`Plugin test failed: ${test.tool}; actual=${JSON.stringify(output)}`)
     }
     signal.throwIfAborted()
     const index = this.index()

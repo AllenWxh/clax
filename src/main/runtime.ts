@@ -54,7 +54,7 @@ export class LocalAgentRuntime implements AgentRuntime {
         const unsubscribe = control.onSteering?.(() => { steered = true; streamController.abort() })
         const streamSignal = AbortSignal.any([signal, streamController.signal])
         try {
-          for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
+          for await (const event of provider.stream({ sessionId: session.id, model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
             streamSignal.throwIfAborted()
             if (event.type === 'text') { current.content += event.text; emit({ type: 'text_delta', messageId: current.id, delta: event.text }) }
             else if (event.type === 'reasoning') {

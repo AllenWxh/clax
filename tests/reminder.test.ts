@@ -25,7 +25,7 @@ test('recent activity keeps only entries inside the window', () => {
   const items = [{ ...base, app: 'Old', window: 'w', startedAt: 0, endedAt: 1000, activeMs: 1000 },
     { ...base, app: 'Code', window: 'x'.repeat(300), startedAt: 5000, endedAt: 9000, activeMs: 3_600_000 }]
   const result = recentActivity(items, 2000)
-  assert.equal(result.length, 1); assert.equal(result[0]!.app, 'Code'); assert.equal(result[0]!.minutes, 60); assert.equal(result[0]!.window.length, 120)
+  assert.equal(result.length, 1); assert.equal(result[0]!.app, 'Code'); assert.equal(result[0]!.minutes, 60); assert.equal(result[0]!.window.length, 300)
 })
 
 test('scheduler respects enabled flag, quiet hours and failures', async () => {

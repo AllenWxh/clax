@@ -3,24 +3,24 @@ import type { WebCitation } from './types'
 /** Accept source metadata, never executable URLs or fabricated links from prose. */
 export function parseCitations(value: unknown): WebCitation[] {
   if (!Array.isArray(value)) return []
-  return value.slice(0, 50).flatMap(item => {
+  return value.flatMap(item => {
     if (item?.type !== 'url_citation') return []
     const raw = item.url_citation ?? item
     try {
-      if (typeof raw.url !== 'string' || raw.url.length > 8192) return []
+      if (typeof raw.url !== 'string') return []
       const url = new URL(raw.url)
       if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return []
       const index = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
-      return [{ url: url.href, title: typeof raw.title === 'string' ? raw.title.slice(0, 500) : url.hostname,
+      return [{ url: url.href, title: typeof raw.title === 'string' ? raw.title : url.hostname,
         startIndex: index(raw.start_index), endIndex: index(raw.end_index),
-        ...(typeof raw.content === 'string' ? { content: raw.content.slice(0, 4000) } : {}) }]
+        ...(typeof raw.content === 'string' ? { content: raw.content } : {}) }]
     } catch { return [] }
   })
 }
 export function mergeCitations(previous: WebCitation[], next: WebCitation[]): WebCitation[] {
   const result = new Map<string, WebCitation>()
   for (const citation of [...previous, ...next]) result.set(`${citation.url}:${citation.startIndex}:${citation.endIndex}`, citation)
-  return [...result.values()].slice(0, 50)
+  return [...result.values()]
 }
 export function citationMarkdown(text: string, citations: WebCitation[]): string {
   const edits = new Map<string, { start: number; end: number; link: string }>()

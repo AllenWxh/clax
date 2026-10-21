@@ -37,6 +37,24 @@ test('Anthropic parser normalizes tool input and real cache/input/output usage',
   try { const events = await collect(new AnthropicProvider(config(server.url, 'anthropic'), 'fake').stream(input)); assert.deepEqual(events.find(e => e.type === 'tool_call'), { type: 'tool_call', call: { id: 'call', name: 'read_file', arguments: { path: 'x' } } }); assert.deepEqual(events.at(-1), { type: 'usage', usage: { inputTokens: 33, outputTokens: 7, cachedTokens: 20, cacheWriteTokens: 3 } }) }
   finally { await server.close() }
 })
+test('Anthropic required output limit follows model capacity and explicit requests', async () => {
+  const bodies: any[] = []
+  const server = createServer(async (request, response) => {
+    let raw = ''; for await (const chunk of request) raw += chunk
+    bodies.push(JSON.parse(raw)); response.setHeader('Content-Type', 'text/event-stream'); response.end('event: message_stop\ndata: {}\n\n')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const settings = { ...config(url, 'anthropic'), models: [{ provider: 'anthropic', id: 'test', name: 'test', tools: true, contextWindow: 100000, maxOutputTokens: 50000 }] }
+    const provider = new AnthropicProvider(settings, 'fake')
+    await collect(provider.stream(input)); await collect(provider.stream({ ...input, maxOutputTokens: 1234 }))
+    assert.equal(bodies[0].max_tokens, 50000); assert.equal(bodies[1].max_tokens, 1234)
+    settings.models[0]!.maxOutputTokens = 100000
+    await collect(provider.stream(input))
+    assert.ok(bodies[2].max_tokens > 50000 && bodies[2].max_tokens < 90000)
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
+})
 test('Ollama NDJSON reports actual token counts and function arguments', async () => {
   const server = await serverFor([JSON.stringify({ message: { content: 'hello', tool_calls: [{ function: { name: 'list_directory', arguments: { path: '.' } } }] } }), JSON.stringify({ done: true, prompt_eval_count: 20, eval_count: 4 })].join('\n'), 'application/x-ndjson')
   try { const events = await collect(new OllamaProvider(config(server.url, 'ollama'), '').stream(input)); assert.ok(events.some(e => e.type === 'tool_call' && e.call.arguments.path === '.')); assert.deepEqual(events.at(-1), { type: 'usage', usage: { inputTokens: 20, outputTokens: 4 } }) }

@@ -36,9 +36,10 @@ export async function fixtureServer() {
       res.on('close', () => clearInterval(timer)); return
     }
     const longTask = prompt.includes('long-task-fixture')
-    if (body.tools?.length && (!hasResults || longTask) && (!longTask || longSteps < 60) && /files-fixture|shell-fixture|steer-fixture|permissions-fixture|long-task-fixture/.test(prompt)) {
+    if (body.tools?.length && (!hasResults || longTask) && (!longTask || longSteps < 60) && /files-fixture|shell-fixture|steer-fixture|permissions-fixture|long-task-fixture|skill-fixture/.test(prompt)) {
       if (longTask) longSteps++
-      const calls = prompt.includes('files-fixture') || longTask ? [{ name: 'list_directory', args: { path: '.' } }]
+      const calls = prompt.includes('skill-fixture') ? [{ name: 'skill_manage', args: { action: 'write', id: 'desktop-learned', content: '# Desktop learned skill\n' + 'Detailed reusable procedure.\n'.repeat(600) + 'DESKTOP-SKILL-TAIL' } }]
+        : prompt.includes('files-fixture') || longTask ? [{ name: 'list_directory', args: { path: '.' } }]
         : prompt.includes('permissions-fixture') ? [{ name: 'shell', args: { command: 'node -e "console.log(42)"', timeout: 5000 } }, { name: 'write_file', args: { path: 'approved.txt', content: 'Full access continued the tool batch.' } }]
         : prompt.includes('steer-fixture') ? [{ name: 'shell', args: { command: 'node -e "setTimeout(()=>console.log(42),800)"', timeout: 5000 } }, { name: 'write_file', args: { path: 'must-not-exist.txt', content: 'unsafe stale plan' } }]
         : [{ name: 'shell', args: { command: 'node --version', timeout: 5000 } }]

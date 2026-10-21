@@ -104,23 +104,23 @@ function startShortcut(accelerator = service.store.settings.globalShortcut) {
 }
 
 const providerSchema = z.object({
-  id: z.string().max(100).optional(), name: z.string().min(1).max(100),
+  id: z.string().optional(), name: z.string().min(1),
   kind: z.enum(['openrouter', 'openai', 'compatible', 'anthropic', 'gemini', 'ollama']),
   baseUrl: z.url().refine(value => /^https?:\/\//.test(value), 'Use http:// or https://'),
-  apiKey: z.string().max(8192).optional(), apiKeyEnv: z.string().max(120).optional(),
-  modelIds: z.array(z.string().min(1).max(250)).max(1000).optional(), toolCalling: z.boolean(),
-  contextWindow: z.number().int().min(1000).max(10000000).optional(),
+  apiKey: z.string().optional(), apiKeyEnv: z.string().optional(),
+  modelIds: z.array(z.string().min(1)).optional(), toolCalling: z.boolean(),
+  contextWindow: z.number().int().positive().optional(),
   pricing: z.object({ input: z.number().min(0), output: z.number().min(0), cache: z.number().min(0).optional() }).optional(),
 })
 const settingsSchema = z.object({
   globalShortcut: z.enum(SHORTCUTS),
   permissionMode: z.enum(['ask', 'auto', 'full']), demoEnabled: z.boolean(), disabledTools: z.array(z.string()),
-  enabledSkills: z.record(z.string(), z.boolean()), maxContextChars: z.number().int().refine(value => value === 0 || value >= 4000),
+  enabledSkills: z.record(z.string(), z.boolean()), maxContextChars: z.number().int().nonnegative(),
   memory: z.object({ enabled: z.boolean(), autoCapture: z.boolean() }),
-  activity: z.object({ enabled: z.boolean(), useInMemory: z.boolean(), retentionDays: z.number().int().min(1).max(365),
-    excludedApps: z.array(z.string().trim().min(1).max(200)).max(100) }).default(defaultActivity),
-  search: z.object({ kind: z.enum(['none', 'openrouter', 'tavily', 'searxng']), baseUrl: z.string().max(2048) }),
-  reminder: z.object({ enabled: z.boolean(), intervalMinutes: z.number().int().min(10).max(240),
+  activity: z.object({ enabled: z.boolean(), useInMemory: z.boolean(), retentionDays: z.number().int().nonnegative(),
+    excludedApps: z.array(z.string().trim().min(1)) }).default(defaultActivity),
+  search: z.object({ kind: z.enum(['none', 'openrouter', 'tavily', 'searxng']), baseUrl: z.string() }),
+  reminder: z.object({ enabled: z.boolean(), intervalMinutes: z.number().positive(),
     quietStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), quietEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }).default(defaultReminder),
 })
 function registerIPC() {
@@ -131,12 +131,12 @@ function registerIPC() {
       return await handler(...args)
     })
   }
-  const id = (value: unknown) => z.string().min(1).max(100).parse(value)
+  const id = (value: unknown) => z.string().min(1).parse(value)
   handle('bootstrap', () => service.bootstrap())
   handle('importOpenRouter', () => service.importOpenRouter())
   handle('usageSummary', () => service.usageSummary())
   handle('providerCredits', providerId => service.providerCredits(id(providerId)))
-  handle('provisionOpenRouter', providerId => service.provisionOpenRouter(id(providerId)))
+  handle('provisionOpenRouter', (providerId, limit) => service.provisionOpenRouter(id(providerId), z.number().finite().nonnegative().nullish().parse(limit) ?? null))
   handle('send', (sessionId, text) => service.send(id(sessionId), z.string().min(1).parse(text)))
   handle('stop', sessionId => service.stop(id(sessionId)))
   handle('pause', sessionId => service.pause(id(sessionId)))
@@ -144,7 +144,7 @@ function registerIPC() {
   handle('retry', (sessionId, messageId) => service.retry(id(sessionId), id(messageId)))
   handle('newSession', () => service.newSession())
   handle('openSession', sessionId => service.openSession(id(sessionId)))
-  handle('setModel', (sessionId, ref) => service.setModel(id(sessionId), z.object({ provider: z.string().max(100), model: z.string().max(250), reasoningEffort: z.enum(REASONING_EFFORTS).optional() }).parse(ref)))
+  handle('setModel', (sessionId, ref) => service.setModel(id(sessionId), z.object({ provider: z.string(), model: z.string(), reasoningEffort: z.enum(REASONING_EFFORTS).optional() }).parse(ref)))
   handle('chooseWorkspace', async sessionId => {
     nativeDialog = true
     try {
@@ -163,14 +163,14 @@ function registerIPC() {
     service.saveSettings(parsed)
   })
   handle('saveMemory', (file, content) => service.saveMemory(z.enum(['USER.md', 'PREFERENCES.md', 'MEMORY.md']).parse(file), z.string().parse(content)))
-  handle('searchMemory', query => service.searchMemory(z.string().max(2000).parse(query)))
+  handle('searchMemory', query => service.searchMemory(z.string().parse(query)))
   handle('readMemory', (path, start, lines) => service.readMemory(z.string().parse(path), z.number().int().min(1).optional().parse(start), z.number().int().min(1).optional().parse(lines)))
-  handle('forgetMemory', path => service.forgetMemory(z.string().max(250).parse(path)))
-  handle('activityReport', (date, query, before) => service.activityReport(z.string().max(10).parse(date), z.string().max(2000).optional().parse(query), z.string().uuid().optional().parse(before)))
-  handle('deleteActivity', date => service.deleteActivity(z.string().max(10).parse(date)))
+  handle('forgetMemory', path => service.forgetMemory(z.string().parse(path)))
+  handle('activityReport', (date, query, before) => service.activityReport(z.string().parse(date), z.string().optional().parse(query), z.string().uuid().optional().parse(before)))
+  handle('deleteActivity', date => service.deleteActivity(z.string().parse(date)))
   handle('captureSelection', () => service.captureSelection())
   handle('requestActivityPermission', () => service.requestActivityPermission())
-  handle('saveSearchKey', key => { service.store.setSecret('web-search', z.string().max(8192).parse(key)); send({ type: 'refresh' }) })
+  handle('saveSearchKey', key => { service.store.setSecret('web-search', z.string().parse(key)); send({ type: 'refresh' }) })
   handle('approve', (approvalId, allow) => service.approve(id(approvalId), z.boolean().parse(allow)))
   handle('hide', () => window.hide())
   handle('openDataFolder', () => shell.openPath(service.store.home))
@@ -187,7 +187,7 @@ function registerIPC() {
     else if (selected === 'rollback') service.store.extensions.rollback(name)
     else service.store.extensions.setEnabled(name, selected === 'enable')
   })
-  handle('connectExtension', (extensionId, input) => service.store.extensions.connect(id(extensionId), z.object({ apiKey: z.string().max(8192).optional(), clientId: z.string().max(250).optional(), clientSecret: z.string().max(2000).optional() }).strict().parse(input), url => shell.openExternal(url)))
+  handle('connectExtension', (extensionId, input) => service.store.extensions.connect(id(extensionId), z.object({ apiKey: z.string().optional(), clientId: z.string().optional(), clientSecret: z.string().optional() }).strict().parse(input), url => shell.openExternal(url)))
   handle('disconnectExtension', extensionId => service.store.extensions.disconnect(id(extensionId)))
   handle('openExtensionsFolder', () => shell.openPath(join(service.store.home, 'extensions')))
   handle('expand', show)

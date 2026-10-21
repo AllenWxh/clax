@@ -9,7 +9,7 @@ import { ExtensionsPanel } from './Extensions'
 const api = window.clax
 export type SettingsTab = 'General' | 'Providers' | 'Tools' | 'Memory' | 'Activity' | 'Skills' | 'Extensions' | 'About'
 const tabs: SettingsTab[] = ['General', 'Providers', 'Tools', 'Memory', 'Activity', 'Skills', 'Extensions', 'About']
-const allTools = ['list_directory', 'read_file', 'write_file', 'edit_file', 'search_files', 'shell', 'process', 'web_fetch', 'web_search', 'remember', 'memory_search', 'memory_get', 'memory_forget', 'session_history', 'activity_search', 'extension_manage']
+const allTools = ['list_directory', 'read_file', 'write_file', 'edit_file', 'search_files', 'shell', 'process', 'web_fetch', 'web_search', 'remember', 'memory_search', 'memory_get', 'memory_forget', 'session_history', 'activity_search', 'extension_manage', 'skill_manage']
 const providerDefaults: Record<Exclude<ProviderKind, 'mock'>, { name: string; url: string }> = {
   openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   compatible: { name: 'Custom provider', url: '' }, openai: { name: 'OpenAI', url: 'https://api.openai.com/v1' },

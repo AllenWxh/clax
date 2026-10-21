@@ -23,7 +23,7 @@ export async function refreshGoogle(client: GoogleClient, previous: GoogleTokens
   return tokens(await exchange(body, signal), previous.refreshToken)
 }
 
-export async function authorizeGoogle(client: GoogleClient, signal: AbortSignal, open: (url: string) => Promise<unknown>, exchange = googleExchange, timeout = 180000): Promise<GoogleTokens> {
+export async function authorizeGoogle(client: GoogleClient, signal: AbortSignal, open: (url: string) => Promise<unknown>, exchange = googleExchange, timeout = 0): Promise<GoogleTokens> {
   signal.throwIfAborted()
   const verifier = randomBytes(32).toString('base64url'), state = randomBytes(32).toString('base64url')
   let redirect = '', received = false
@@ -44,7 +44,7 @@ export async function authorizeGoogle(client: GoogleClient, signal: AbortSignal,
     else rejectCode(new Error('Google 没有返回授权码。'))
   })
   const abort = () => rejectCode(new Error('Gmail 授权已取消。'))
-  const timer = setTimeout(() => rejectCode(new Error('Gmail 授权超时，请重新连接。')), timeout)
+  const timer = timeout > 0 ? setTimeout(() => rejectCode(new Error('Gmail 授权超时，请重新连接。')), timeout) : undefined
   signal.addEventListener('abort', abort, { once: true })
   try {
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
@@ -57,6 +57,6 @@ export async function authorizeGoogle(client: GoogleClient, signal: AbortSignal,
     signal.throwIfAborted(); await open(url.toString())
     const body = new URLSearchParams({ client_id: client.clientId, redirect_uri: redirect, code: await code, code_verifier: verifier, grant_type: 'authorization_code' })
     if (client.clientSecret) body.set('client_secret', client.clientSecret)
-    return tokens(await exchange(body, AbortSignal.any([signal, AbortSignal.timeout(20000)])))
+    return tokens(await exchange(body, signal))
   } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); server.close(); server.closeAllConnections() }
 }

@@ -8,7 +8,7 @@ const dollars = (value: number | null | undefined) => value == null ? '—' : `$
 export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; open: boolean; toggle: () => void }) {
   const provider = snapshot.providers.find(p => p.id === snapshot.session.currentModel?.provider && p.kind === 'openrouter') ?? snapshot.providers.find(p => p.kind === 'openrouter')
   const [credits, setCredits] = useState<ProviderCredits | null>(null), [summary, setSummary] = useState<UsageSummary | null>(null)
-  const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [keyLimit, setKeyLimit] = useState('')
   const [hovered, setHovered] = useState<{ id: string; left: number; top: number } | null>(null)
   function hover(id: string, element: HTMLElement) {
     const rect = element.getBoundingClientRect()
@@ -45,7 +45,7 @@ export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; 
     </button>
     {open && <div className="popover usage-popover" data-testid="usage-panel" onScroll={() => setHovered(null)}><div className="popover-heading">余额与模型用量<button className="text-button" aria-label="Refresh usage" disabled={busy} onClick={() => { void refresh() }}><RefreshCw size={13} className={busy ? 'spin' : ''} /></button></div>
       {rows.map(([label, value]) => <div className="usage-line" key={label}><span>{label}</span><strong>{value}</strong></div>)}
-      {credits?.managementKey && provider && <div className="usage-key-warning"><p>当前是管理 Key，不能聊天。可创建一把 Clax 调用 Key，累计上限 $15，由系统加密保存；管理 Key 保留查余额。</p><button className="secondary-button" disabled={busy} onClick={() => { void (async () => { try { setBusy(true); await api.provisionOpenRouter(provider.id); await refresh() } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false) } })() }}>创建 Clax 调用 Key（上限 $15）</button></div>}
+      {credits?.managementKey && provider && <div className="usage-key-warning"><p>当前是管理 Key，不能聊天。可创建一把 Clax 调用 Key，由系统加密保存；额度可选，留空不设 Key 限额，管理 Key 保留查余额。</p><input aria-label="调用 Key 累计额度" type="number" min="0" step="any" placeholder="不限额（可选 USD 上限）" value={keyLimit} onChange={e => setKeyLimit(e.target.value)} /><button className="secondary-button" disabled={busy} onClick={() => { void (async () => { try { setBusy(true); await api.provisionOpenRouter(provider.id, keyLimit.trim() ? Number(keyLimit) : null); await refresh() } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false) } })() }}>创建 Clax 调用 Key</button></div>}
       <div className="usage-bars" aria-label="模型累计用量">{models.map((model, index) => {
         const amount = model.inputTokens + model.outputTokens
         const name = snapshot.providers.find(p => p.id === model.provider)?.models.find(m => m.id === model.model)?.name.replace(/^[^:]+:\s*/, '') ?? model.model

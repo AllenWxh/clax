@@ -128,8 +128,11 @@ test('Plugins run more than 20 requests and return large output without package 
   const f = await setup()
   try {
     const value = extension()
+    value.manifest.id = 'longer-than-twenty-characters'
+    value.manifest.tools[0]!.name = 'longer_than_twenty_four_chars'
+    value.tests[0]!.tool = value.manifest.tools[0]!.name
     value.code += '\n/*' + 'large source '.repeat(12000) + '*/'
-    f.manager.stage(value); await f.manager.install('example', signal())
+    f.manager.stage(value); await f.manager.install(value.manifest.id, signal())
     const output = await f.manager.tools()[0]!.execute({ query: 'x'.repeat(100000) }, f.context)
     assert.ok(output.length > 100000)
     let calls = 0

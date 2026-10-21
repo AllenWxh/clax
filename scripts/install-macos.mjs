@@ -58,7 +58,7 @@ else {
   try {
     const bundle = join(stage, 'Clax.app'), contents = join(bundle, 'Contents'), resources = join(contents, 'Resources')
     await mkdir(resources, { recursive: true }); await mkdir(join(contents, 'MacOS'))
-    await run('/usr/bin/xcrun', ['swiftc', '-O', join(project, 'native/launcher.swift'), '-o', join(contents, 'MacOS/Clax')], { timeout: 120000 })
+    await run('/usr/bin/xcrun', ['swiftc', '-O', join(project, 'native/launcher.swift'), '-o', join(contents, 'MacOS/Clax')])
     await plist(join(contents, 'Info.plist'), {
       CFBundleIdentifier: 'com.clax.launcher', CFBundleName: 'Clax', CFBundleDisplayName: 'Clax',
       CFBundleExecutable: 'Clax', CFBundlePackageType: 'APPL', CFBundleVersion: '1', CFBundleShortVersionString: '0.1.0',

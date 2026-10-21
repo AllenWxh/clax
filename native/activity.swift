@@ -7,7 +7,6 @@ var generation = 0
 var ownerPid: pid_t = 0
 var exclusions: Set<String> = []
 var lastTarget: NSRunningApplication?
-var lastTargetAt = Date.distantPast
 var screenLocked = false
 
 func emit(_ value: [String: Any]) {
@@ -36,7 +35,6 @@ func snapshot(_ app: NSRunningApplication) -> [String: Any]? {
     var title = ""
     if trusted {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(appElement, 0.4)
         // Check the actual focused field, before reading any window or selection content.
         if let focused = element(attribute(appElement, kAXFocusedUIElementAttribute as CFString)),
            (attribute(focused, kAXSubroleAttribute as CFString) as? String) == (kAXSecureTextFieldSubrole as String) { return nil }
@@ -47,7 +45,7 @@ func snapshot(_ app: NSRunningApplication) -> [String: Any]? {
     if title.range(of: "incognito|private browsing|隐身|无痕|隐私浏览", options: [.regularExpression, .caseInsensitive]) != nil { return nil }
     let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
     return ["time": Int(Date().timeIntervalSince1970 * 1000), "app": app.localizedName ?? "Unknown app",
-            "bundleId": app.bundleIdentifier ?? "", "pid": app.processIdentifier, "window": String(title.prefix(500)), "idleSeconds": min(604800, max(0, idle)), "trusted": trusted]
+            "bundleId": app.bundleIdentifier ?? "", "pid": app.processIdentifier, "window": title, "idleSeconds": max(0, idle), "trusted": trusted]
 }
 func sample() {
     if !enabled { return }
@@ -57,7 +55,7 @@ func sample() {
     }
     if let app = NSWorkspace.shared.frontmostApplication, !controlSurface(app),
        let observation = snapshot(app) {
-        lastTarget = app; lastTargetAt = Date()
+        lastTarget = app
         value.merge(observation) { _, next in next }
     } else {
         value["blocked"] = true
@@ -90,15 +88,13 @@ func command(_ value: [String: Any]) {
         let front = NSWorkspace.shared.frontmostApplication
         let target = controlSurface(front) ? lastTarget : front
         guard let app = target, app.processIdentifier != ownerPid, !app.isTerminated,
-              !controlSurface(front) || Date().timeIntervalSince(lastTargetAt) < 90,
               var observation = snapshot(app) else { fail("目标应用已被排除，或没有最近的可用窗口。"); return }
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(appElement, 0.4)
         guard let focused = element(attribute(appElement, kAXFocusedUIElementAttribute as CFString)),
               let text = attribute(focused, kAXSelectedTextAttribute as CFString) as? String, !text.isEmpty else {
             fail("未读取到选中文字；这个应用可能不支持。请先选中文字，再使用托盘里的记录选中文字。"); return
         }
-        observation.merge(["type": "selection", "id": id, "generation": generation, "text": String(text.prefix(4000))]) { _, next in next }
+        observation.merge(["type": "selection", "id": id, "generation": generation, "text": text]) { _, next in next }
         emit(observation)
     }
 }

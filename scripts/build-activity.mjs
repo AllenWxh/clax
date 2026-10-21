@@ -11,7 +11,7 @@ export async function buildActivity() {
   if (built && built.mtimeMs >= (await stat(source)).mtimeMs) return
   await mkdir(resolve('out/native'), { recursive: true })
   try {
-    await promisify(execFile)('/usr/bin/xcrun', ['swiftc', '-O', source, '-o', target], { timeout: 120000 })
+    await promisify(execFile)('/usr/bin/xcrun', ['swiftc', '-O', source, '-o', target])
     await promisify(execFile)('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier', 'com.clax.activity', target])
   } catch (error) { throw new Error(`macOS 活动记录器编译失败，需要 Xcode Command Line Tools。\n${error.message}`) }
 }

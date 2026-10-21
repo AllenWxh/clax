@@ -1,11 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { AgentSession, AppSettings, MemoryFile, ProviderConfig, SessionSummary, SkillInfo } from '../shared/types'
 import { DEFAULT_SHORTCUT } from '../shared/shortcuts'
-import { DEFAULT_CONTEXT_CHARS } from '../shared/context'
+import { BACKGROUND_SEPARATOR, DEFAULT_CONTEXT_CHARS } from '../shared/context'
 import { MemoryStore } from './memory'
 import { ActivityStore, defaultActivity } from './activity-store'
 import { defaultReminder } from './reminder'
@@ -171,11 +171,21 @@ export class LocalStore {
     writeFileSync(`${path}.tmp`, content, { mode: 0o600 }); renameSync(`${path}.tmp`, path)
     this.memory.sync()
   }
+  private skillPath(id: string) {
+    if (!id || id === '.' || id === '..' || /[\\/\0]/.test(id)) throw new Error('Use a skill directory name')
+    return join(this.home, 'skills', id, 'SKILL.md')
+  }
+  readSkill(id: string) { return readFileSync(this.skillPath(id), 'utf8') }
+  saveSkill(id: string, content: string) {
+    const path = this.skillPath(id)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(`${path}.tmp`, content, { mode: 0o600 }); renameSync(`${path}.tmp`, path)
+  }
   listSkills(): SkillInfo[] {
     return readdirSync(join(this.home, 'skills'), { withFileTypes: true }).filter(dir => dir.isDirectory()).flatMap(dir => {
       const path = join(this.home, 'skills', dir.name, 'SKILL.md')
       if (!existsSync(path)) return []
-      const content = readFileSync(path, 'utf8').slice(0, 8000)
+      const content = readFileSync(path, 'utf8')
       return [{ id: dir.name, name: content.match(/^#\s+(.+)$/m)?.[1] ?? dir.name,
         description: content.split('\n').find(line => line.trim() && !line.startsWith('#') && !line.startsWith('---')) ?? '',
         enabled: this.settings.enabledSkills[dir.name] !== false }]
@@ -184,11 +194,13 @@ export class LocalStore {
   context(query = '', workspace = this.defaultWorkspace): string {
     const memory = this.settings.memory.enabled ? this.memory.context(query, workspace) : 'Local memory is disabled.'
     const skills = this.listSkills().filter(s => s.enabled).map(s =>
-      `## Skill: ${s.name}\n${readFileSync(join(this.home, 'skills', s.id, 'SKILL.md'), 'utf8').slice(0, 4000)}`,
-    ).join('\n\n').slice(0, 8000)
+      `## Skill: ${s.name}\n${readFileSync(join(this.home, 'skills', s.id, 'SKILL.md'), 'utf8')}`,
+    )
     const activity = this.settings.memory.enabled && this.settings.activity.useInMemory ? this.activity.context(query) : ''
-    // A direct question about desktop activity must retain its evidence when the context is bounded.
-    return `${activity}${memory}\n\nEnabled skills:\n${skills}`
+    const instructions = join(workspace, 'AGENTS.md')
+    const project = existsSync(instructions) ? `\nProject instructions (${instructions}):\n${readFileSync(instructions, 'utf8')}` : ''
+    // Current instructions and skills take precedence over historical retrieval when the model window fills.
+    return [project, ...skills.map(skill => `Enabled skill:\n${skill}`), activity, memory].filter(Boolean).join(BACKGROUND_SEPARATOR)
   }
   close() { this.extensions.close(); this.activity.close(); this.memory.close(); this.db.close() }
 }

@@ -72,7 +72,7 @@ Use `pnpm autostart:off` to disable login startup, or `pnpm autostart:on` to ena
 
 Configure web search in **Settings → Tools**, manage memory in **Memory**, manage plugins in **Extensions**, and enable activity recording and reminders in **Activity**.
 
-Chats and memories are stored locally in `~/.clax` by default. Relevant context is sent when using a remote model. Tools use **full access** by default; change this to automatic decisions or approval before actions in **Settings → General**. Model calls, search, and background memory capture use your own API credits.
+Chats and memories are stored locally in `~/.clax` by default. Relevant context is sent when using a remote model. Tools use **full access** by default; change this to automatic decisions or approval before actions in **Settings → General**. Clax imposes no fixed quotas on execution steps, command duration, text size, skills, or memory entries; model context windows, system permissions, account authorization, and plugin isolation still apply. Model calls, search, and background memory capture use your own API credits.
 
 Clax is an experimental project. See [validation notes](TESTING.md) for tested behavior and limitations, and [third-party notices](THIRD_PARTY_NOTICES.md) for references and dependencies.
 

@@ -75,7 +75,7 @@ test('Excluded apps, privacy windows and disabled recording produce no stored co
     assert.equal(f.store.activity.report(localDate(t)).items.length, 0)
   } finally { await f.cleanup() }
 })
-test('Explicit selections are bounded, sanitized and durably restored without a chat or model call', async () => {
+test('Explicit selections are complete, sanitized and durably restored without a chat or model call', async () => {
   const f = await setup(), t = Date.now(), key = 'activity-private-key-123456789'
   try {
     f.store.memory.setSecrets([key])
@@ -83,7 +83,7 @@ test('Explicit selections are bounded, sanitized and durably restored without a 
     f.store.activity.close(); f.store.activity = new ActivityStore(f.home, f.store.memory.sanitize)
     const report = f.store.activity.report(localDate(t), '图表')
     assert.equal(report.selections, 1); assert.equal(report.items.length, 1)
-    assert.ok(report.items[0]!.text.length <= 4000)
+    assert.ok(report.items[0]!.text.length > 4000)
     assert.match(report.items[0]!.text, /REDACTED/)
     assert.doesNotMatch(report.items[0]!.text, /activity-private-key|secret-value/)
     assert.equal(f.store.listSessions().length, 0)
