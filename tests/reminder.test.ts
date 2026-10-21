@@ -40,8 +40,8 @@ test('scheduler respects enabled flag, quiet hours and failures', async () => {
   scheduler.configure(); scheduler.close()
 })
 
-test('loop exhaustion after an overflow retry still closes the turn', async () => {
-  const { LocalAgentRuntime, MAX_STEPS } = await import('../src/main/runtime')
+test('an overflow beyond the old step budget retries and finishes without losing tool progress', async () => {
+  const { LocalAgentRuntime } = await import('../src/main/runtime')
   const { createTools, ProcessManager } = await import('../src/main/tools')
   const { LocalStore } = await import('../src/main/storage')
   const { mkdtemp, mkdir, rm } = await import('node:fs/promises')
@@ -58,15 +58,17 @@ test('loop exhaustion after an overflow retry still closes the turn', async () =
     let n = 0
     const provider: any = { id: 'loop', name: 'Loop', listModels: async () => [], capabilities: () => ({ tools: true }),
       async *stream(): AsyncIterable<any> {
-        if (++n === MAX_STEPS) throw new Error('context_length_exceeded: maximum context length is 8192 tokens') // last step exits via retry
+        if (++n === 48) throw new Error('context_length_exceeded: maximum context length is 8192 tokens')
+        if (n > 48) { yield { type: 'text', text: 'Finished after retry' }; return }
         yield { type: 'text', text: `step ${n}` }
         yield { type: 'tool_call', call: { id: `c${n}`, name: 'list_directory', arguments: { path: '.' } } }
       } }
     const events: any[] = []
     for await (const event of new LocalAgentRuntime(() => 64000).runTurn(session, session.currentModel, createTools(store, processes), new AbortController().signal,
-      { provider: () => provider, context: () => store.context(), takeSteering: () => [], permission: () => 'auto', approve: async () => true })) events.push(event)
+      { provider: () => provider, context: () => store.context(), contextWindow: () => 1000000, takeSteering: () => [], permission: () => 'auto', approve: async () => true })) events.push(event)
     assert.equal(events.filter(e => e.type === 'turn_finished').length, 1)
     assert.equal(events.at(-1)!.status, 'complete')
-    assert.equal(n, MAX_STEPS) // the final step's retry is the last model call
+    assert.ok(n > 48)
+    assert.equal(session.messages.flatMap(m => m.activities ?? []).filter(a => a.status === 'done').length, 47)
   } finally { await processes.shutdown(); store.close(); await rm(root, { recursive: true, force: true }) }
 })

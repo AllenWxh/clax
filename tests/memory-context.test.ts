@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { LocalStore } from '../src/main/storage'
 import { MemoryStore, localDate, redactSecrets } from '../src/main/memory'
 import { ContextManager, estimateTokens, requestTokens, safeBoundaries } from '../src/main/context'
+import { contextLimits } from '../src/shared/context'
 import { LocalAgentRuntime } from '../src/main/runtime'
 import { AgentService } from '../src/main/service'
 import { createTools, ProcessManager } from '../src/main/tools'
@@ -164,6 +165,52 @@ test('256k context retains large history and compacts only past its token thresh
     assert.ok(requests.every(r => requestTokens(r.system, r.messages, r.tools) < 256000))
   } finally { await f.cleanup() }
 })
+test('Compaction inside one long tool turn pins the full user request and last completed tool pair', async () => {
+  const f = await setup()
+  try {
+    const user = msg('user', 'user', 'Keep this exact request; continue the same task.')
+    f.session.messages = [user]
+    for (let i = 0; i < 35; i++) {
+      const call = { id: `call-${i}`, name: 'read', arguments: {} }
+      f.session.messages.push({ ...msg(`a-${i}`, 'assistant', 'progress'), toolCalls: [call] },
+        { ...msg(`t-${i}`, 'tool', 'observed result '.repeat(150)), toolCallId: call.id })
+    }
+    const original = structuredClone(f.session.messages)
+    const provider = providerFor(async function* () { yield { type: 'text', text: summary } })
+    const prepared = await prepare(f, provider)
+    assert.ok(f.session.summarizedCount > 0); assert.deepEqual(prepared.messages[0], user)
+    assert.ok(prepared.messages.some(m => m.toolCallId === 'call-34'))
+    assert.ok(prepared.messages.some(m => m.toolCalls?.some(c => c.id === 'call-34')))
+    assert.deepEqual(f.session.messages, original)
+    const next = await prepare(f, provider)
+    assert.equal(next.messages.filter(m => m.id === user.id).length, 1)
+    assert.ok(next.estimatedTokens <= next.budgetTokens)
+  } finally { await f.cleanup() }
+})
+test('Automatic context follows native capacity/output limits while explicit smaller budgets remain valid', () => {
+  const automatic = contextLimits(0, 1000000, 128000)
+  assert.equal(automatic.output, 128000); assert.ok(automatic.budget > 256000)
+  assert.ok(automatic.budget + automatic.output <= 1000000)
+  assert.equal(contextLimits(48000, 1000000, 128000).budget, 16000)
+  assert.ok(contextLimits(0).budget + contextLimits(0).output <= 32768)
+  assert.ok(contextLimits(0, 1048576, 943718).budget > 256000)
+})
+test('Models with very large output maxima retain useful input and allocate output from remaining capacity', async () => {
+  const f = await setup()
+  try {
+    f.session.messages = [msg('user', 'user', 'Continue the task.')]
+    const provider = providerFor(async function* () { throw new Error('No summary needed') })
+    const manager = new ContextManager(() => 0), runtime = control(provider, { contextWindow: () => 1048576, maxOutputTokens: () => 943718 })
+    const short = await manager.prepare(f.session, f.session.currentModel!, [], new AbortController().signal, runtime, () => {})
+    assert.ok(short.budgetTokens > 256000)
+    assert.ok(short.maxOutputTokens! > short.reservedOutputTokens)
+    assert.ok(short.estimatedTokens + short.maxOutputTokens! <= Math.floor(1048576 * 0.9))
+    f.session.messages[0]!.content = 'long input '.repeat(20000)
+    const long = await manager.prepare(f.session, f.session.currentModel!, [], new AbortController().signal, runtime, () => {})
+    assert.ok(long.maxOutputTokens! < short.maxOutputTokens!)
+    assert.ok(long.estimatedTokens + long.maxOutputTokens! <= Math.floor(1048576 * 0.9))
+  } finally { await f.cleanup() }
+})
 test('256k configuration still respects smaller models and unknown context capacities', async () => {
   const f = await setup()
   try {
@@ -173,7 +220,7 @@ test('256k configuration still respects smaller models and unknown context capac
     for (const window of [128000, 16000, undefined]) {
       const prepared = await manager.prepare(f.session, f.session.currentModel!, [], new AbortController().signal, control(provider, { contextWindow: () => window }), () => {})
       assert.ok(prepared.budgetTokens < (window ?? 32768))
-      assert.ok(prepared.budgetTokens + prepared.maxOutputTokens <= (window ?? 32768) * 0.9)
+      assert.ok(prepared.budgetTokens + prepared.reservedOutputTokens <= (window ?? 32768) * 0.9)
       assert.equal(prepared.messages.at(-1)!.content, '只检查上下文预算。')
     }
   } finally { await f.cleanup() }
@@ -240,6 +287,24 @@ test('Provider context-overflow recovery does not replay a completed side effect
     const tools = [{ name: 'effect', description: 'test', inputSchema: {}, execute: async () => { executed++; return 'Observed result' } }]
     for await (const _ of new LocalAgentRuntime(() => 48000).runTurn(f.session, f.session.currentModel!, tools, new AbortController().signal, control(provider))) { /* Drain actual runtime events. */ }
     assert.equal(executed, 1); assert.equal(requests, 3); assert.equal(f.session.messages.at(-1)!.content, 'Completed once.')
+  } finally { await f.cleanup() }
+})
+test('Repeated provider overflows shrink the effective budget and keep completed side effects', async () => {
+  const f = await setup(); let requests = 0, executed = 0
+  try {
+    f.session.messages = [msg('user', 'user', 'Run this once and report the result.')]
+    const provider = providerFor(async function* (request) {
+      if (!request.tools.length) { yield { type: 'text', text: summary }; return }
+      requests++
+      if (requests === 1) yield { type: 'tool_call', call: { id: 'once', name: 'effect', arguments: {} } }
+      else if (requests < 4) throw new Error('maximum context length exceeded')
+      else { assert.ok(request.messages.some(m => m.toolCallId === 'once')); yield { type: 'text', text: 'Recovered after two overflows.' } }
+    })
+    const tools = [{ name: 'effect', description: 'test', inputSchema: {}, execute: async () => { executed++; return 'Observed result' } }]
+    for await (const _ of new LocalAgentRuntime(() => 48000).runTurn(f.session, f.session.currentModel!, tools, new AbortController().signal, control(provider))) { /* Drain. */ }
+    assert.equal(executed, 1); assert.equal(requests, 4)
+    assert.equal(f.session.messages.at(-1)?.content, 'Recovered after two overflows.')
+    assert.ok(f.session.contextState!.budgetTokens < 16000 * 0.65)
   } finally { await f.cleanup() }
 })
 test('Real HTTP memory capture persists across a new session and restart, with source/forget tools', async () => {

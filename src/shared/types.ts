@@ -123,7 +123,7 @@ export interface AppSettings {
   demoEnabled: boolean
   disabledTools: string[]
   enabledSkills: Record<string, boolean>
-  maxContextChars: number // Legacy persisted unit; divide by 3 for the estimated input-token budget.
+  maxContextChars: number // 0 follows model capacity; positive legacy values are 3 times the input-token budget.
   memory: { enabled: boolean; autoCapture: boolean }
   activity: { enabled: boolean; useInMemory: boolean; retentionDays: number; excludedApps: string[] }
   search: { kind: 'none' | 'openrouter' | 'tavily' | 'searxng'; baseUrl: string }
@@ -217,6 +217,7 @@ export interface RunControl {
   provider: (ref: ModelRef) => ModelProvider
   context: (query?: string) => string
   contextWindow?: (ref: ModelRef) => number | undefined
+  maxOutputTokens?: (ref: ModelRef) => number | undefined
   webSearch?: (ref: ModelRef) => boolean
   sanitize?: (text: string) => string
   flushMemory?: (session: AgentSession, through: number, signal: AbortSignal) => Promise<void>

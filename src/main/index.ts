@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { z } from 'zod'
-import { MAX_CONTEXT_CHARS } from '../shared/context'
 import { LocalStore, dataHome } from './storage'
 import { AgentService } from './service'
 import { bindTrayActions } from './tray'
@@ -115,8 +114,8 @@ const providerSchema = z.object({
 })
 const settingsSchema = z.object({
   globalShortcut: z.enum(SHORTCUTS),
-  permissionMode: z.enum(['ask', 'auto', 'full']), demoEnabled: z.boolean(), disabledTools: z.array(z.string()).max(30),
-  enabledSkills: z.record(z.string(), z.boolean()), maxContextChars: z.number().int().min(4000).max(MAX_CONTEXT_CHARS),
+  permissionMode: z.enum(['ask', 'auto', 'full']), demoEnabled: z.boolean(), disabledTools: z.array(z.string()),
+  enabledSkills: z.record(z.string(), z.boolean()), maxContextChars: z.number().int().refine(value => value === 0 || value >= 4000),
   memory: z.object({ enabled: z.boolean(), autoCapture: z.boolean() }),
   activity: z.object({ enabled: z.boolean(), useInMemory: z.boolean(), retentionDays: z.number().int().min(1).max(365),
     excludedApps: z.array(z.string().trim().min(1).max(200)).max(100) }).default(defaultActivity),
@@ -138,7 +137,7 @@ function registerIPC() {
   handle('usageSummary', () => service.usageSummary())
   handle('providerCredits', providerId => service.providerCredits(id(providerId)))
   handle('provisionOpenRouter', providerId => service.provisionOpenRouter(id(providerId)))
-  handle('send', (sessionId, text) => service.send(id(sessionId), z.string().min(1).max(32000).parse(text)))
+  handle('send', (sessionId, text) => service.send(id(sessionId), z.string().min(1).parse(text)))
   handle('stop', sessionId => service.stop(id(sessionId)))
   handle('pause', sessionId => service.pause(id(sessionId)))
   handle('resume', sessionId => service.resume(id(sessionId)))
@@ -163,9 +162,9 @@ function registerIPC() {
     if (parsed.globalShortcut !== service.store.settings.globalShortcut) startShortcut(parsed.globalShortcut)
     service.saveSettings(parsed)
   })
-  handle('saveMemory', (file, content) => service.saveMemory(z.enum(['USER.md', 'PREFERENCES.md', 'MEMORY.md']).parse(file), z.string().max(100000).parse(content)))
+  handle('saveMemory', (file, content) => service.saveMemory(z.enum(['USER.md', 'PREFERENCES.md', 'MEMORY.md']).parse(file), z.string().parse(content)))
   handle('searchMemory', query => service.searchMemory(z.string().max(2000).parse(query)))
-  handle('readMemory', (path, start, lines) => service.readMemory(z.string().max(250).parse(path), z.number().int().min(1).max(100000).optional().parse(start), z.number().int().min(1).max(160).optional().parse(lines)))
+  handle('readMemory', (path, start, lines) => service.readMemory(z.string().parse(path), z.number().int().min(1).optional().parse(start), z.number().int().min(1).optional().parse(lines)))
   handle('forgetMemory', path => service.forgetMemory(z.string().max(250).parse(path)))
   handle('activityReport', (date, query, before) => service.activityReport(z.string().max(10).parse(date), z.string().max(2000).optional().parse(query), z.string().uuid().optional().parse(before)))
   handle('deleteActivity', date => service.deleteActivity(z.string().max(10).parse(date)))
@@ -183,8 +182,8 @@ function registerIPC() {
   handle('enableShortcut', () => startShortcut())
   handle('extensionAction', async (extensionId, action) => {
     const name = id(extensionId), selected = z.enum(['test', 'install', 'enable', 'disable', 'rollback']).parse(action)
-    if (selected === 'test') await service.store.extensions.test(name, AbortSignal.timeout(120000))
-    else if (selected === 'install') await service.store.extensions.install(name, AbortSignal.timeout(120000))
+    if (selected === 'test') await service.store.extensions.test(name, new AbortController().signal)
+    else if (selected === 'install') await service.store.extensions.install(name, new AbortController().signal)
     else if (selected === 'rollback') service.store.extensions.rollback(name)
     else service.store.extensions.setEnabled(name, selected === 'enable')
   })

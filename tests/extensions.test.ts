@@ -111,7 +111,7 @@ test('Guest isolation denies Node access, local destinations, redirects-by-host,
   await assert.rejects(runExtension('function run(){return ({}).constructor.constructor("return process")()}', 'x', {}, signal(), async () => { throw new Error('unexpected') }), /process/)
 })
 
-test('Infinite loops hit hard worker deadlines and disabling a plugin cancels an active invocation', async () => {
+test('Explicit plugin deadlines and user disable still cancel otherwise unlimited invocations', async () => {
   await assert.rejects(runExtension('function run(){while(true){}}', 'x', {}, signal(), async () => { throw new Error('unexpected') }, 100), /timed out|interrupted/)
   const f = await setup()
   try {
@@ -121,6 +121,23 @@ test('Infinite loops hit hard worker deadlines and disabling a plugin cancels an
     const rejected = assert.rejects(pending, /abort|cancel/i)
     f.manager.setEnabled('example', false); await rejected
     assert.deepEqual(f.manager.tools(), [])
+  } finally { await f.close() }
+})
+
+test('Plugins run more than 20 requests and return large output without package or invocation quotas', async () => {
+  const f = await setup()
+  try {
+    const value = extension()
+    value.code += '\n/*' + 'large source '.repeat(12000) + '*/'
+    f.manager.stage(value); await f.manager.install('example', signal())
+    const output = await f.manager.tools()[0]!.execute({ query: 'x'.repeat(100000) }, f.context)
+    assert.ok(output.length > 100000)
+    let calls = 0
+    const result = await runExtension('async function run(tool,input,sdk){for(let i=0;i<25;i++)await sdk.request({url:"https://example.com",method:"POST",body:input.body});return input.body}', 'x', { body: 'x'.repeat(100000) }, signal(), async request => {
+      const parsed = validateRequest({ ...value.manifest, hosts: ['example.com'], methods: ['POST'] }, request)
+      assert.equal(parsed.body!.length, 100000); calls++; return { status: 200, body: 'ok' }
+    })
+    assert.equal(calls, 25); assert.equal((result as string).length, 100000)
   } finally { await f.close() }
 })
 

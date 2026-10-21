@@ -8,8 +8,8 @@ import ipaddr from 'ipaddr.js'
 import { z } from 'zod'
 import type { ExtensionManifest, ExtensionRequest, ExtensionResponse } from '../shared/extensions'
 
-export const requestSchema = z.object({ url: z.string().max(8192), method: z.string().max(10).optional(),
-  headers: z.record(z.string().max(100), z.string().max(8192)).optional(), body: z.string().max(64000).optional() }).strict()
+export const requestSchema = z.object({ url: z.string(), method: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(), body: z.string().optional() }).strict()
 export function publicAddress(address: string): boolean {
   try { return ipaddr.process(address).range() === 'unicast' } catch { return false }
 }
@@ -47,11 +47,9 @@ export async function publicRequest(request: ExtensionRequest, signal: AbortSign
     const response = await fetch(request.url, { method: request.method, body: request.body, headers: { 'User-Agent': 'Clax/0.1', ...request.headers, ...authentication },
       redirect: 'manual', signal, dispatcher: agent })
     if (response.status >= 300 && response.status < 400) throw new Error('Plugin redirects are blocked; request the intended allowed URL explicitly')
-    let body = '', size = 0
+    let body = ''
     const decoder = new TextDecoder()
     if (response.body) for await (const chunk of response.body) {
-      size += chunk.length
-      if (size > 1_000_000) throw new Error('Plugin HTTP response exceeds 1 MB')
       body += decoder.decode(chunk, { stream: true })
     }
     return { status: response.status, body: body + decoder.decode() }
@@ -59,22 +57,22 @@ export async function publicRequest(request: ExtensionRequest, signal: AbortSign
 }
 
 export async function runExtension(code: string, tool: string, input: Record<string, unknown>, signal: AbortSignal,
-  request: (value: unknown, signal: AbortSignal) => Promise<ExtensionResponse>, timeout = 20000): Promise<unknown> {
+  request: (value: unknown, signal: AbortSignal) => Promise<ExtensionResponse>, timeout = 0): Promise<unknown> {
   signal.throwIfAborted()
   const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? './extension-worker.mjs' : './extension-worker.js', import.meta.url), {
-    workerData: { code, tool, input, timeout }, env: {}, execArgv: [], resourceLimits: { maxOldGenerationSizeMb: 96, stackSizeMb: 4 },
+    workerData: { code, tool, input, timeout }, env: {}, execArgv: [],
   })
   const controller = new AbortController(), combined = AbortSignal.any([signal, controller.signal])
   try {
     return await new Promise((resolve, reject) => {
-      let calls = 0, settled = false
+      let settled = false
       const finish = (error?: Error, result?: unknown) => {
         if (settled) return
         settled = true; clearTimeout(timer); combined.removeEventListener('abort', aborted)
         error ? reject(error) : resolve(result)
       }
       const aborted = () => finish(combined.reason instanceof Error ? combined.reason : new Error('Plugin cancelled'))
-      const timer = setTimeout(() => controller.abort(new Error('Plugin execution timed out')), timeout)
+      const timer = timeout > 0 ? setTimeout(() => controller.abort(new Error('Plugin execution timed out')), timeout) : undefined
       combined.addEventListener('abort', aborted, { once: true })
       worker.on('error', error => finish(error))
       worker.on('exit', code => finish(new Error(`Plugin worker exited (${code})`)))
@@ -83,12 +81,12 @@ export async function runExtension(code: string, tool: string, input: Record<str
         if (message.type === 'result') {
           if (message.error) return finish(new Error(String(message.error)))
           try {
-            if (typeof message.output !== 'string' || message.output.length > 32000) throw new Error('Plugin output exceeds 32,000 characters')
+            if (typeof message.output !== 'string') throw new Error('Invalid plugin output')
             finish(undefined, JSON.parse(message.output))
           } catch (error) { finish(error as Error) }
         } else if (message.type === 'request') {
           try {
-            if (++calls > 20 || typeof message.request !== 'string' || message.request.length > 80000) throw new Error('Plugin HTTP request limit exceeded')
+            if (typeof message.request !== 'string') throw new Error('Invalid plugin HTTP request')
             const value = await request(JSON.parse(message.request), combined)
             if (!settled) worker.postMessage({ id: message.id, result: { value } })
           } catch (error) { if (!settled) worker.postMessage({ id: message.id, result: { error: (error as Error).message } }) }

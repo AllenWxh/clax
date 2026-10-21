@@ -147,7 +147,7 @@ export class LocalStore {
     }
   }
   listSessions(): SessionSummary[] {
-    return this.db.prepare('SELECT payload FROM sessions ORDER BY updated_at DESC LIMIT 60').all().map(row => {
+    return this.db.prepare('SELECT payload FROM sessions ORDER BY updated_at DESC').all().map(row => {
       const s = JSON.parse(row.payload as string) as AgentSession
       return { id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, workspace: s.workspace }
     })
@@ -167,7 +167,6 @@ export class LocalStore {
   }
   saveMemory(file: MemoryFile, content: string) {
     if (!memoryFiles.includes(file)) throw new Error('Unknown memory file')
-    if (content.length > 100000) throw new Error('Memory file is too large')
     const path = join(this.home, 'memory', file)
     writeFileSync(`${path}.tmp`, content, { mode: 0o600 }); renameSync(`${path}.tmp`, path)
     this.memory.sync()

@@ -3,10 +3,11 @@ import { getQuickJS } from 'quickjs-emscripten'
 
 // Guest JavaScript receives no Node, filesystem, environment, modules or direct network APIs.
 const QuickJS = await getQuickJS(), runtime = QuickJS.newRuntime()
-runtime.setMemoryLimit(32 * 1024 * 1024)
-runtime.setMaxStackSize(512 * 1024)
-const deadline = Date.now() + workerData.timeout
-runtime.setInterruptHandler(() => Date.now() > deadline)
+// Parent cancellation terminates the Worker even while guest code runs synchronously.
+if (workerData.timeout > 0) {
+  const deadline = Date.now() + workerData.timeout
+  runtime.setInterruptHandler(() => Date.now() > deadline)
+}
 const vm = runtime.newContext(), pending = new Map()
 let sequence = 0, finished = false
 function finish(value) {

@@ -9,7 +9,7 @@ import { AgentService } from '../src/main/service'
 import { ProcessManager, createTools } from '../src/main/tools'
 import { commandRisk, inside } from '../src/main/permissions'
 import { fixtureServer } from './fixture-server'
-import { LocalAgentRuntime, MAX_STEPS } from '../src/main/runtime'
+import { LocalAgentRuntime } from '../src/main/runtime'
 import { DEFAULT_SHORTCUT } from '../src/shared/shortcuts'
 import { requestTokens } from '../src/main/context'
 import type { AgentEvent, ModelProvider, ModelRequest, ToolContext, AgentTool, ModelEvent } from '../src/shared/types'
@@ -234,7 +234,7 @@ test('Full access defaults persist while explicit confirmation modes survive res
   const f = await setup()
   try {
     assert.equal(f.store.settings.permissionMode, 'full')
-    assert.equal(f.store.settings.maxContextChars / 3, 256000)
+    assert.equal(f.store.settings.maxContextChars, 0)
     for (const mode of ['ask', 'auto', 'full'] as const) {
       f.store.saveSettings({ ...f.store.settings, permissionMode: mode })
       const restored = new LocalStore(f.store.home, volatileCodec, f.workspace)
@@ -347,7 +347,7 @@ test('LLM rolling summary preserves recent raw turns and bounded memory context'
     assert.equal(f.session.messages.length, 9)
   } finally { await f.cleanup() }
 })
-test('Step budget ends long tool loops with a summary instead of an error', async () => {
+test('Long tasks finish beyond both old step limits without forced summaries or skipped tools', async () => {
   const f = await setup(); const requests: ModelRequest[] = [], events: AgentEvent[] = []
   try {
     let n = 0
@@ -355,17 +355,71 @@ test('Step budget ends long tool loops with a summary instead of an error', asyn
       async *stream(request): AsyncIterable<ModelEvent> {
         requests.push(request)
         yield { type: 'text', text: `step ${++n}` }
-        yield { type: 'tool_call', call: { id: `c${n}`, name: 'list_directory', arguments: { path: '.' } } } // always wants more tools
+        if (n <= 72) yield { type: 'tool_call', call: { id: `c${n}`, name: 'list_directory', arguments: { path: '.' } } }
       } }
     f.session.messages.push({ id: 'u', turnId: 't', role: 'user', content: 'loop forever', createdAt: Date.now(), status: 'complete' })
     f.session.currentModel = { provider: 'loop', model: 'test' }
-    for await (const event of new LocalAgentRuntime(() => 64000).runTurn(f.session, f.session.currentModel, createTools(f.store, f.processes), f.context.signal,
-      { provider: () => provider, context: () => f.store.context(), takeSteering: () => [], permission: () => 'auto', approve: async () => true })) events.push(event)
-    assert.equal(requests.length, MAX_STEPS)
-    assert.match(requests.at(-1)!.system, /Step budget for this turn is exhausted/)
+    for await (const event of new LocalAgentRuntime(() => 0).runTurn(f.session, f.session.currentModel, createTools(f.store, f.processes), f.context.signal,
+      { provider: () => provider, context: () => f.store.context(), contextWindow: () => 1000000, takeSteering: () => [], permission: () => 'auto', approve: async () => true })) events.push(event)
+    assert.equal(requests.length, 73)
+    assert.ok(requests.every(r => !r.system.includes('Step budget for this turn is exhausted')))
     assert.ok(!events.some(e => e.type === 'error'))
     assert.deepEqual(events.at(-1), { type: 'turn_finished', status: 'complete' })
     const last = f.session.messages.filter(m => m.role === 'tool').at(-1)!
-    assert.match(last.content, /step budget/) // the final tool call is not executed
+    assert.match(last.content, /package.json/)
+    assert.equal(f.session.messages.flatMap(m => m.activities ?? []).filter(a => a.status === 'done').length, 72)
+  } finally { await f.cleanup() }
+})
+
+test('An unlimited tool loop remains cancellable beyond 48 steps and keeps complete tool pairs', { timeout: 10000 }, async () => {
+  const f = await setup(), controller = new AbortController(), events: AgentEvent[] = []
+  let calls = 0
+  const provider: ModelProvider = { id: 'loop', name: 'Loop', listModels: async () => [], capabilities: () => ({ tools: true }),
+    async *stream() { yield { type: 'tool_call', call: { id: `call-${++calls}`, name: 'tick', arguments: {} } } } }
+  const tools: AgentTool[] = [{ name: 'tick', description: 'Progress fixture', inputSchema: { type: 'object' }, execute: async () => 'done' }]
+  try {
+    f.session.currentModel = { provider: 'loop', model: 'test' }
+    f.session.messages.push({ id: 'u', turnId: 't', role: 'user', content: 'Continue until stopped', createdAt: Date.now() })
+    for await (const event of new LocalAgentRuntime(() => 0).runTurn(f.session, f.session.currentModel, tools, controller.signal,
+      { provider: () => provider, context: () => '', contextWindow: () => 1000000, takeSteering: () => [], permission: () => 'full', approve: async () => true })) {
+      events.push(event)
+      if (event.type === 'tool_finished' && calls >= 60) controller.abort()
+    }
+    assert.ok(calls >= 60); assert.deepEqual(events.at(-1), { type: 'turn_finished', status: 'stopped' })
+    for (const call of f.session.messages.flatMap(m => m.toolCalls ?? [])) assert.equal(f.session.messages.filter(m => m.toolCallId === call.id).length, 1)
+  } finally { await f.cleanup() }
+})
+
+test('Large tool arguments and complete output survive runtime storage without truncation', async () => {
+  const f = await setup(), payload = 'large '.repeat(25000) + 'END-OF-RESULT'
+  let step = 0
+  const provider: ModelProvider = { id: 'large', name: 'Large', listModels: async () => [], capabilities: () => ({ tools: true }),
+    async *stream(request) {
+      if (!step++) yield { type: 'tool_call', call: { id: 'large-call', name: 'large', arguments: { payload } } }
+      else { assert.equal(request.messages.find(m => m.role === 'tool')?.content, payload); yield { type: 'text', text: 'complete' } }
+    } }
+  const tools: AgentTool[] = [{ name: 'large', description: 'Large fixture', inputSchema: { type: 'object' }, execute: async args => String(args.payload) }]
+  try {
+    f.session.currentModel = { provider: 'large', model: 'test' }
+    f.session.messages.push({ id: 'u', turnId: 't', role: 'user', content: 'Read a large result', createdAt: Date.now() })
+    for await (const _ of new LocalAgentRuntime(() => 0).runTurn(f.session, f.session.currentModel, tools, f.context.signal,
+      { provider: () => provider, context: () => '', contextWindow: () => 1000000, takeSteering: () => [], permission: () => 'full', approve: async () => true })) { /* Drain. */ }
+    assert.equal(f.session.messages.find(m => m.role === 'tool')?.content, payload)
+    assert.equal(f.session.messages.flatMap(m => m.activities ?? [])[0]?.output, payload)
+  } finally { await f.cleanup() }
+})
+
+test('File and shell tools retain results beyond the previous file, command and output quotas', async () => {
+  const f = await setup()
+  try {
+    const text = 'a'.repeat(2100000) + 'UNIQUE-END'
+    await f.tool('write_file').execute({ path: 'large.txt', content: text }, f.context)
+    assert.ok((await f.tool('read_file').execute({ path: 'large.txt' }, f.context)).endsWith('UNIQUE-END'))
+    assert.ok((await f.tool('search_files').execute({ query: 'UNIQUE-END' }, f.context)).endsWith('UNIQUE-END'))
+    const diff = await f.tool('edit_file').execute({ path: 'large.txt', oldText: 'UNIQUE-END', newText: 'EDITED-END' }, f.context)
+    assert.ok(diff.length > 32000); assert.ok((await readFile(join(f.workspace, 'large.txt'), 'utf8')).endsWith('EDITED-END'))
+    const result = await f.tool('shell').execute({ command: 'node -e "process.stdout.write(\'x\'.repeat(100000)+\'SHELL-END\')"' + ' '.repeat(13000), timeout: 0 }, f.context)
+    assert.ok(result.includes('SHELL-END')); assert.ok(result.length > 100000); assert.ok(!result.includes('[Output truncated]'))
+    assert.match(await f.tool('shell').execute({ command: 'node --version', timeout: 3000000000 }, f.context), /Exit code: 0/)
   } finally { await f.cleanup() }
 })

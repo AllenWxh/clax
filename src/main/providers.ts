@@ -10,7 +10,7 @@ export async function providerRequest(url: string, key: string, options: Request
   const headers = new Headers(options.headers)
   if (key && !headers.has('x-api-key') && !headers.has('x-goog-api-key')) headers.set('Authorization', `Bearer ${key}`)
   if (options.body) headers.set('Content-Type', 'application/json')
-  const response = await fetch(url, { ...options, headers, signal: AbortSignal.any([options.signal ?? new AbortController().signal, AbortSignal.timeout(180000)]) })
+  const response = await fetch(url, { ...options, headers })
   if (!response.ok) {
     let detail = (await response.text()).slice(0, 1400)
     if (key) detail = detail.split(key).join('[redacted]')
@@ -30,7 +30,6 @@ export async function* lines(response: Response): AsyncIterable<string> {
     while (true) {
       const { done, value } = await reader.read()
       buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
-      if (buffer.length > 2_000_000) throw new Error('Provider stream frame exceeds size limit')
       let index: number
       while ((index = buffer.indexOf('\n')) !== -1) {
         yield buffer.slice(0, index).replace(/\r$/, '')
@@ -109,7 +108,7 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
   async *stream(input: ModelRequest): AsyncIterable<ModelEvent> {
     const router = this.config.kind === 'openrouter'
     const tools: unknown[] = input.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } }))
-    if (router && input.webSearch) tools.push({ type: 'openrouter:web_search', parameters: { engine: 'native', max_uses: 3, max_total_results: 10 } })
+    if (router && input.webSearch) tools.push({ type: 'openrouter:web_search', parameters: { engine: 'native' } })
     if (router && input.reasoningEffort && !this.config.models.find(m => m.id === input.model)?.reasoningEfforts?.includes(input.reasoningEffort)) throw new Error('This model does not support the selected reasoning effort. Refresh the catalogue and choose again.')
     const response = await request(endpoint(this.config.baseUrl, 'chat/completions'), this.key, {
       method: 'POST', signal: input.signal, body: JSON.stringify({
@@ -117,7 +116,6 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
         ...(router && input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
         ...(input.maxOutputTokens ? this.config.kind === 'openai' ? { max_completion_tokens: input.maxOutputTokens } : { max_tokens: input.maxOutputTokens } : {}),
         ...(tools.length ? { tools } : {}),
-        ...(router && input.webSearch ? { max_tool_calls: 3 } : {}),
       }),
     })
     const calls = new Map<number, { id: string; name: string; arguments: string }>()

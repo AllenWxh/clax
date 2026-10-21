@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 /** Local protocol fixture: exercises the real HTTP adapter, never impersonates a live LLM. */
 export async function fixtureServer() {
   const requests: any[] = []
+  let longSteps = 0
   const server = createServer(async (req, res) => {
     if (req.url === '/v1/models') {
       res.setHeader('Content-Type', 'application/json')
@@ -34,8 +35,10 @@ export async function fixtureServer() {
       const timer = setInterval(() => frame({ choices: [{ delta: { content: '…' } }] }), 40)
       res.on('close', () => clearInterval(timer)); return
     }
-    if (body.tools?.length && !hasResults && /files-fixture|shell-fixture|steer-fixture|permissions-fixture/.test(prompt)) {
-      const calls = prompt.includes('files-fixture') ? [{ name: 'list_directory', args: { path: '.' } }]
+    const longTask = prompt.includes('long-task-fixture')
+    if (body.tools?.length && (!hasResults || longTask) && (!longTask || longSteps < 60) && /files-fixture|shell-fixture|steer-fixture|permissions-fixture|long-task-fixture/.test(prompt)) {
+      if (longTask) longSteps++
+      const calls = prompt.includes('files-fixture') || longTask ? [{ name: 'list_directory', args: { path: '.' } }]
         : prompt.includes('permissions-fixture') ? [{ name: 'shell', args: { command: 'node -e "console.log(42)"', timeout: 5000 } }, { name: 'write_file', args: { path: 'approved.txt', content: 'Full access continued the tool batch.' } }]
         : prompt.includes('steer-fixture') ? [{ name: 'shell', args: { command: 'node -e "setTimeout(()=>console.log(42),800)"', timeout: 5000 } }, { name: 'write_file', args: { path: 'must-not-exist.txt', content: 'unsafe stale plan' } }]
         : [{ name: 'shell', args: { command: 'node --version', timeout: 5000 } }]

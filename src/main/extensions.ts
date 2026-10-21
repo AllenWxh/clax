@@ -11,16 +11,16 @@ import { authorizeGoogle, refreshGoogle, type GoogleClient, type GoogleTokens } 
 
 const idSchema = z.string().regex(/^[a-z][a-z0-9-]{0,19}$/), hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const manifestSchema = z.object({
-  id: idSchema, version: z.string().regex(/^\d+\.\d+\.\d+$/), name: z.string().min(1).max(80), description: z.string().min(1).max(600),
-  hosts: z.array(z.string().regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/)).max(10),
+  id: idSchema, version: z.string().regex(/^\d+\.\d+\.\d+$/), name: z.string().min(1), description: z.string().min(1),
+  hosts: z.array(z.string().regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/)),
   methods: z.array(z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])).min(1).max(5),
-  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,23}$/), description: z.string().min(1).max(600), inputSchema: z.record(z.string(), z.unknown()) }).strict()).min(1).max(8),
+  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,23}$/), description: z.string().min(1), inputSchema: z.record(z.string(), z.unknown()) }).strict()).min(1),
   auth: z.discriminatedUnion('type', [z.object({ type: z.literal('google-readonly') }).strict(), z.object({ type: z.literal('api-key'), header: z.string().regex(/^(?:Authorization|X-[A-Za-z0-9-]+)$/), prefix: z.string().max(40).regex(/^[\x20-\x7e]*$/) }).strict()]).optional(),
 }).strict()
-export const extensionPackageSchema = z.object({ manifest: manifestSchema, code: z.string().min(1).max(40000), tests: z.array(z.object({
+export const extensionPackageSchema = z.object({ manifest: manifestSchema, code: z.string().min(1), tests: z.array(z.object({
   tool: z.string().max(24), input: z.record(z.string(), z.unknown()), expected: z.unknown(), responses: z.array(z.object({ request: requestSchema,
-    response: z.object({ status: z.number().int().min(100).max(599), body: z.string().max(100000) }).strict() }).strict()).max(20),
-}).strict()).min(1).max(24) }).strict()
+    response: z.object({ status: z.number().int().min(100).max(599), body: z.string() }).strict() }).strict()),
+}).strict()).min(1) }).strict()
 const entrySchema = z.object({ current: hashSchema.optional(), previous: hashSchema.optional(), draft: hashSchema.optional(), tested: hashSchema.optional(), enabled: z.boolean().default(false) })
 type Entry = z.infer<typeof entrySchema>
 interface Connection { stamp: string; apiKey?: string; client?: GoogleClient; tokens?: GoogleTokens }
@@ -30,22 +30,20 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 const toolName = (id: string, name: string) => `ext_${id.replace(/-/g, '_')}_${name}`
 const stamp = (manifest: ExtensionManifest) => digest({ hosts: manifest.hosts, methods: manifest.methods, auth: manifest.auth })
 function validateSchema(schema: Record<string, unknown>) {
-  if (JSON.stringify(schema).length > 12000) throw new Error('Plugin input schema is too large')
-  let nodes = 0
-  function visit(value: unknown, depth: number) {
-    if (++nodes > 256 || depth > 10) throw new Error('Plugin input schema is too complex')
-    if (!value || typeof value !== 'object') return
+  const pending: unknown[] = [schema]
+  while (pending.length) {
+    const value = pending.pop()
+    if (!value || typeof value !== 'object') continue
     for (const [key, child] of Object.entries(value)) {
       if (['$ref', '$dynamicRef', 'patternProperties'].includes(key)) throw new Error('Plugin input schemas cannot use references or patternProperties')
       if (key === 'pattern') {
         const simple = typeof child === 'string' ? child.match(/^\^\[([^\]]+)\](\+|\*|\{\d+(?:,\d*)?\})\$$/) : null
         if (!simple || simple[1]!.replace(/\\[dw]/g, '').replace(/[A-Za-z0-9_ -]/g, '')) throw new Error('Use an anchored character-class pattern or minLength/maxLength')
       }
-      visit(child, depth + 1)
+      pending.push(child)
     }
   }
-  // Generated schemas are bounded before Ajv compiles them on the host thread.
-  visit(schema, 0); ajv.compile(schema)
+  ajv.compile(schema)
 }
 
 export class ExtensionManager {
@@ -96,7 +94,6 @@ export class ExtensionManager {
   }
   stage(input: unknown) {
     const value = extensionPackageSchema.parse(input), { id, tools, auth, hosts, methods } = value.manifest
-    if (JSON.stringify(value).length > 100000) throw new Error('Plugin package exceeds 100,000 characters')
     if (new Set(tools.map(t => t.name)).size !== tools.length) throw new Error('Plugin tool names must be unique')
     for (const tool of tools) {
       if (tool.inputSchema.type !== 'object' || !value.tests.some(test => test.tool === tool.name)) throw new Error('Each tool needs an object input schema and at least one test')
@@ -131,7 +128,7 @@ export class ExtensionManager {
         const parsed = validateRequest(value.manifest, request), fixture = fixtures.shift()
         if (!fixture || !isDeepStrictEqual(parsed, validateRequest(value.manifest, fixture.request))) throw new Error('Plugin test made an unexpected HTTP request')
         return fixture.response
-      }, 3000)
+      })
       if (!isDeepStrictEqual(output, test.expected) || fixtures.length) throw new Error(`Plugin test failed: ${test.tool}; actual=${JSON.stringify(output)?.slice(0, 1000)}`)
     }
     signal.throwIfAborted()

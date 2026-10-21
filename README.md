@@ -25,6 +25,8 @@ Key 支持直接输入（系统加密保存）、环境变量名或 `env:OPENROU
 
 工具默认**全权授权**，读写文件、Shell 和插件等可用工具直接执行，无需反复允许。顶部权限菜单或 Settings → General 可切换为**自动判断**、**操作前确认**，设置跨会话、跨重启保留。确认卡也能点击**全权授权并继续**，立即放行等待中的操作。系统账号授权和插件执行边界独立生效。
 
+任务不再因 16 / 48 步而结束，持续执行到完成、真实错误或用户暂停/停止。Shell 默认不限时，显式 `timeout` 单位为毫秒，0 也表示不限时；后台进程可用进程工具停止。工具参数、文件大小、目录数量、搜索扫描量和原始输出不设 Clax 配额；可主动指定行范围、搜索数量和历史分页。模型收到的工具输出副本仍可能按上下文容量压缩，完整原文始终可查。
+
 回复按流式逐段显示。运行中输入补充指令，按 Enter 或 **Steer** 调整方向：文字输出立即中断，已开始的工具到下一处安全边界生效，未执行的旧工具计划会跳过。等待审批时补充指令会取消旧审批。
 
 **OpenRouter 联网搜索**可直接使用现有调用 Key，不需要另配 OpenAI / Anthropic Key。点击窗口上的联网搜索入口，或进入 Settings → Tools，选择 **OpenRouter · 原生搜索优先** 并保存；选择 OpenRouter 模型且启用 `web_search` 后生效。支持的 GPT / Claude 模型使用原生搜索，其他端点可能由 OpenRouter 回退到搜索引擎。模型按问题决定是否搜索，可直接说“联网搜索……”。回复保留来源链接，关闭搜索后原引用仍保留；搜索失败会显示错误，不伪造成功。
@@ -35,7 +37,7 @@ Clax 现在可自行开发**持久插件**。例如对它说“给自己开发�
 
 **Settings → Extensions** 展示插件草稿、测试、已安装版本、网络目的地、账号连接、启停和回退。代码、离线 HTTP fixture 测试及不可变版本保存在 `~/.clax/extensions/`，实际安装会重新跑测试；失败草稿不会覆盖正常版本。测试只能证明已有用例，真实服务仍需验证。遇到工具错误时，Clax 可以根据错误修改草稿，再测试安装；这种改进由当前任务驱动，不会在空闲时自行改写核心程序。
 
-插件通过独立 Worker 中的 [QuickJS](https://github.com/justjake/quickjs-emscripten) 执行，客体代码没有 Node、文件、Shell 或环境变量入口，只能调用宿主的受控 HTTPS 接口。每次调用限制 20 秒、32 MB 客体内存和 20 次请求；只允许清单中的域名和方法，拒绝重定向、本地网段和额外端口。macOS TUN 代理的 198.18/15 虚拟 DNS 仅在实际路由为 utun 时兼容，仍保留 HTTPS 证书校验。此边界针对插件执行，不限制用户另外授权的工作区文件和 Shell 工具。插件管理也遵循 Ask / Auto / Full 权限模式。
+插件通过独立 Worker 中的 [QuickJS](https://github.com/justjake/quickjs-emscripten) 执行，客体代码没有 Node、文件、Shell 或环境变量入口，只能调用宿主的受控 HTTPS 接口。不设 Clax 执行时长、请求数量、源码/输出大小或自定义内存配额；用户停止任务或停用插件会终止 Worker。只允许清单中的域名和方法，拒绝重定向、本地网段和额外端口。macOS TUN 代理的 198.18/15 虚拟 DNS 仅在实际路由为 utun 时兼容，仍保留 HTTPS 证书校验。此边界针对插件执行，不限制用户另外授权的工作区文件和 Shell 工具。插件管理也遵循 Ask / Auto / Full 权限模式。
 
 插件联网搜索示例使用 [Tavily API](https://docs.tavily.com/documentation/api-reference/endpoint/search)，需要你自己的搜索服务 Key；开发和安装不等于自动获得第三方服务账户。Key 在 Extensions 中填写，使用系统 safeStorage 保存并由宿主注入请求，不放进插件源码。Gmail 示例采用 [Google 桌面 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)：提供 Google Cloud 的 Desktop OAuth Client ID（以及客户端要求的 Secret）、启用 Gmail API、将个人账号加入测试用户，然后在系统浏览器点击授权。回调使用随机本机端口、state 和 PKCE，令牌可刷新，清单或连接目的地变化后须重新连接。第一版使用 [gmail.readonly](https://developers.google.com/workspace/gmail/api/auth/scopes)，不发送或删除邮件；断开会清除本机保存的连接。Clax 自己持有这份授权，不使用 Codex 的 Gmail 连接器。
 
@@ -45,7 +47,7 @@ Clax 现在可自行开发**持久插件**。例如对它说“给自己开发�
 
 上下文会按估算 token 管理，中文、工具参数、系统提示和工具定义都会计入预算，并为回复预留空间。接近预算时，先保存需要记住的信息，再分块总结旧对话，保留近期用户消息和完整工具调用/结果组。摘要保存目标、约束、决定、关键标识、已验证结果和待办；结构不合格会重试一次，失败则明确使用带来源的原文片段回退。接口报告上下文过长时，会收紧预算并重试一次，已经执行的工具不会再次执行。完整聊天原文一直保存在 `sessions.db`，大工具输出只缩短发送给模型的副本，可通过 `session_history` 找回。
 
-默认预算上限为 **256,000 个估算输入 tokens**，约到 209,920 tokens 时触发压缩，优先保留最近两轮用户对话。Settings → General 可选 16k / 32k / 64k / 128k / 256k，显示当前模型的有效预算及压缩触发量；模型容量不足会扣除安全余量和回复预留后自动下调，容量未知时按 32,768 处理。旧版默认曾为约 16k tokens，旧设置显式选的预算仍保留；磁盘字段 `maxContextChars` 继续按 3 倍 token 数保存以兼容旧数据。扩大预算延后后续压缩，不自动还原已有摘要；完整原文始终保留在本机。
+上下文默认选择**模型最大容量**，不再另设 256k 上限；按模型容量扣除安全余量和原生输出预留，未知容量按 32,768 处理。Settings → General 仍可主动选较小预算，显示有效输入预算及 82% 压缩触发量。磁盘字段 `maxContextChars: 0` 表示自动，正值兼容旧版 3 倍 token 数。单轮工具循环也可压缩已完成步骤，完整最新指令和最后一组工具结果保留；不会因为同一条指令太多步骤而停止。扩大预算不自动还原已有摘要，完整原文始终保留在本机。模型接口、账户额度与操作系统的实际限制独立生效。
 
 长期记忆默认开启，数据仍全部位于 `~/.clax`：
 
@@ -60,7 +62,7 @@ Clax 现在可自行开发**持久插件**。例如对它说“给自己开发�
 
 **Settings → Memory** 可开关记忆/自动整理、搜索、查看来源、忘记条目及编辑原有 Markdown。自动提取和压缩使用当前模型，额外请求计入 Usage；Token 预算是保守估算，费用数字以接口返回为准。自动提取需要模型判断，仍可能记错，可在设置中纠正或忘记。索引不能取代原始来源。
 
-这次实现参考 [OpenClaw 的压缩流程](https://github.com/openclaw/openclaw/blob/467fc82c4fd96e6dd55b3d0a6c1559dcf7d0b291/docs/concepts/compaction.md)、[分层 Markdown 记忆](https://github.com/openclaw/openclaw/blob/467fc82c4fd96e6dd55b3d0a6c1559dcf7d0b291/docs/concepts/memory.md)，以及 [Open Dot 的 remember / forget](https://github.com/composio-community/open-dot/blob/f838e17cf5c3a88ade5ceea54680a8145d048c1d/src/server/agent/tools.ts)，在 Clax 中独立实现。自动技能学习和主动提醒仍未接入。
+这次实现参考 [OpenClaw 的压缩流程](https://github.com/openclaw/openclaw/blob/467fc82c4fd96e6dd55b3d0a6c1559dcf7d0b291/docs/concepts/compaction.md)、[分层 Markdown 记忆](https://github.com/openclaw/openclaw/blob/467fc82c4fd96e6dd55b3d0a6c1559dcf7d0b291/docs/concepts/memory.md)，以及 [Open Dot 的 remember / forget](https://github.com/composio-community/open-dot/blob/f838e17cf5c3a88ade5ceea54680a8145d048c1d/src/server/agent/tools.ts)，在 Clax 中独立实现。自动技能学习尚未接入；活动提醒可在 Settings → Activity 开启，默认关闭。
 
 **Settings → Activity** 管理其他应用的电脑活动，默认暂停。开启后约每 3 秒采样前台应用、窗口标题、距离上次操作的时间，连续在同一窗口时合并成时段。超过 60 秒无操作、锁屏或休眠时暂停计时；隐藏 Clax 不会停止记录。菜单栏 C 旁的黑点和窗口里的状态提示表示活动记录已开启，右键 C 可暂停、查看当天记录。
 

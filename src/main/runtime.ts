@@ -8,9 +8,6 @@ import { mergeCitations } from '../shared/citations'
 function message(role: Message['role'], content: string, turnId: string, model?: ModelRef, workspace?: string): Message {
   return { id: randomUUID(), role, content, turnId, model, workspace, createdAt: Date.now(), status: role === 'assistant' ? 'streaming' : 'complete' }
 }
-/** Per-turn model steps; the final step asks for a summary so long tasks end cleanly instead of failing. */
-export const MAX_STEPS = 48
-const FINAL_STEP_NOTE = '\n\nStep budget for this turn is exhausted. Do not call tools. Summarize what was done, what remains, and ask the user to say "继续" to proceed.'
 /** Independent, OpenClaw-inspired loop. No Gateway or third-party runtime internals. */
 export class LocalAgentRuntime implements AgentRuntime {
   id = 'clax'
@@ -24,10 +21,10 @@ export class LocalAgentRuntime implements AgentRuntime {
     const turnId = session.messages.at(-1)!.turnId
     const context = new ContextManager(this.maxContext)
     let current: Message | undefined
-    let recoverOverflow = false, overflowRetries = 0
+    let recoverOverflow = false
     try {
-      for (let step = 0; step < MAX_STEPS; step++) {
-        const finalStep = step === MAX_STEPS - 1
+      // Completion, user cancellation, or a real error ends a turn; tool count never does.
+      while (true) {
         signal.throwIfAborted()
         const ref = { ...(session.currentModel ?? initial) }
         const provider = control.provider(ref)
@@ -57,7 +54,7 @@ export class LocalAgentRuntime implements AgentRuntime {
         const unsubscribe = control.onSteering?.(() => { steered = true; streamController.abort() })
         const streamSignal = AbortSignal.any([signal, streamController.signal])
         try {
-          for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, system: finalStep ? prepared.system + FINAL_STEP_NOTE : prepared.system, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
+          for await (const event of provider.stream({ model: ref.model, reasoningEffort: ref.reasoningEffort, ...prepared, webSearch: webSearch && Boolean(control.webSearch?.(ref)), tools: definitions, signal: streamSignal })) {
             streamSignal.throwIfAborted()
             if (event.type === 'text') { current.content += event.text; emit({ type: 'text_delta', messageId: current.id, delta: event.text }) }
             else if (event.type === 'reasoning') {
@@ -73,7 +70,7 @@ export class LocalAgentRuntime implements AgentRuntime {
             else if (event.type === 'usage') { usage = event.usage; current.webSearchRequests = usage.webSearchRequests }
           }
         } catch (error) {
-          if (!signal.aborted && !steered && contextOverflow(error) && overflowRetries++ < 1) {
+          if (!signal.aborted && !steered && contextOverflow(error)) {
             current.status = 'interrupted'; current.toolCalls = []
             recoverOverflow = true
             emit({ type: 'notice', text: '接口报告上下文过长，正在压缩后重试；已执行的工具不会重复执行。' })
@@ -95,16 +92,13 @@ export class LocalAgentRuntime implements AgentRuntime {
           emit({ type: 'tool_started', messageId: current.id, activity })
           let result: string
           try {
-            if (finalStep) {
-              activity.status = 'denied'; result = 'Skipped: step budget for this turn is exhausted.'
-            } else if (steering.length) {
+            if (steering.length) {
               activity.status = 'denied'; result = 'Skipped because the user supplied a new instruction.'
             } else {
               const tool = activeTools.find(t => t.name === call.name)
               if (!tool) throw new Error(`Tool '${call.name}' is disabled or unknown`)
-              if (JSON.stringify(call.arguments).length > 100000) throw new Error('Tool arguments exceed size limit')
               result = await tool.execute(call.arguments, { session, signal, permission: control.permission(),
-                progress: (stream, text) => { activity.output = (activity.output + text).slice(-64000); emit({ type: 'tool_progress', toolId: call.id, stream, text }) },
+                progress: (stream, text) => { activity.output += text; emit({ type: 'tool_progress', toolId: call.id, stream, text }) },
                 approve: async (name, reason, args) => {
                   activity.status = 'awaiting'
                   const approved = await control.approve(name, reason, args)
@@ -120,22 +114,17 @@ export class LocalAgentRuntime implements AgentRuntime {
             activity.status = error instanceof Error && error.name === 'PermissionDenied' ? 'denied' : 'failed'
             emit({ type: 'tool_failed', toolId: call.id, error: result })
           }
-          activity.output = result.slice(0, 64000); activity.finishedAt = Date.now()
+          activity.output = result; activity.finishedAt = Date.now()
           session.messages.push({ ...message('tool', activity.output, turnId, undefined, session.workspace), toolCallId: call.id, toolName: call.name })
           emit({ type: 'tool_finished', toolId: call.id, output: activity.output, status: activity.status })
           steering.push(...control.takeSteering())
         }
         steering.push(...control.takeSteering())
         appendSteering(steering)
-        if (finalStep || (!current.toolCalls!.length && !steering.length)) {
-          if (finalStep && current.toolCalls!.length) emit({ type: 'notice', text: `本轮已用满 ${MAX_STEPS} 步，已暂停在安全位置；回复“继续”即可接着做。` })
+        if (!current.toolCalls!.length && !steering.length) {
           emit({ type: 'turn_finished', status: 'complete' }); return
         }
       }
-      // The last step may also leave through `continue` (overflow retry or steering); always close the turn.
-      if (current) current.status = 'complete'
-      emit({ type: 'notice', text: `本轮已用满 ${MAX_STEPS} 步，已暂停在安全位置；回复“继续”即可接着做。` })
-      emit({ type: 'turn_finished', status: 'complete' })
     } catch (error) {
       const stopped = signal.aborted
       const paused = stopped && signal.reason?.name === 'PauseError'

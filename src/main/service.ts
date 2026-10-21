@@ -115,7 +115,7 @@ export class AgentService {
   }
   send(id: string, text: string) {
     text = text.trim()
-    if (!text || text.length > 32000) throw new Error('Enter a message of up to 32,000 characters')
+    if (!text) throw new Error('Enter a message')
     const session = this.session(id)
     if (this.running.has(id)) {
       const run = this.running.get(id)!
@@ -144,6 +144,7 @@ export class AgentService {
         provider: ref => { const config = this.config(ref); return createProvider(config, this.secret(config, session.workspace)) },
         context: query => { this.memorySecrets(session.workspace); return this.store.context(query, session.workspace) },
         contextWindow: ref => { const config = this.config(ref); return config.models.find(m => m.id === ref.model)?.contextWindow ?? config.contextWindow },
+        maxOutputTokens: ref => this.config(ref).models.find(m => m.id === ref.model)?.maxOutputTokens,
         webSearch: ref => this.webSearch(ref),
         sanitize: this.store.memory.sanitize,
         flushMemory: async (target, through, signal) => {

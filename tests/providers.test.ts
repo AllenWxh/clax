@@ -6,6 +6,13 @@ import { AnthropicProvider, OllamaProvider, GeminiProvider, sse } from '../src/m
 import type { ModelRequest, ProviderConfig, ModelEvent } from '../src/shared/types'
 
 const input: ModelRequest = { model: 'test', system: 'system', messages: [{ id: 'u', turnId: 't', role: 'user', content: 'hi', createdAt: 1 }], tools: [], signal: new AbortController().signal }
+test('SSE preserves valid responses larger than the former 2 MB frame cap', async () => {
+  const value = 'x'.repeat(2100000) + 'END'
+  const response = new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: value } }] }) + '\n\ndata: [DONE]\n\n')
+  const frames = []
+  for await (const frame of sse(response)) frames.push(frame.data)
+  assert.equal(frames[0].choices[0].delta.content, value)
+})
 async function collect(iterable: AsyncIterable<ModelEvent>) { const result: ModelEvent[] = []; for await (const event of iterable) result.push(event); return result }
 async function serverFor(body: string, type: string) {
   const server = createServer((_, response) => { response.setHeader('Content-Type', type); response.end(body) })
