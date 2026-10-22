@@ -45,7 +45,8 @@ test('OpenRouter search coexists with local tools, preserves sources/usage acros
     assert.equal(foreground.length, 2)
     assert.ok(foreground.every(call => call.max_tool_calls === undefined && !call.plugins))
     assert.ok(foreground.every(call => call.tools.find((t: any) => t.type === 'openrouter:web_search').parameters.max_uses === undefined))
-    assert.ok(foreground.every(call => call.tools.find((t: any) => t.type === 'openrouter:web_search').parameters.engine === 'native'))
+    // "auto" is required: "native" fails for models without provider-side search (DeepSeek/Qwen/GLM).
+    assert.ok(foreground.every(call => call.tools.find((t: any) => t.type === 'openrouter:web_search').parameters.engine === 'auto'))
     assert.ok(foreground.every(call => !call.tools.some((t: any) => t.function?.name === 'web_search')))
     assert.ok(fixture.calls.some(call => call.messages[0].content.startsWith('Extract durable user preferences') && !call.tools?.length))
     const state = await service.bootstrap(), reply = state.session.messages.at(-1)!

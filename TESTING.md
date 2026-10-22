@@ -22,6 +22,12 @@
 - 正式 Clax 已从原入口重启，全权授权、模型容量模式已保存。220 条原消息、已有摘要、所选模型、Provider、加密凭据及其他设置逐项保留；正式用量表行数未变化。备份与最终核对见 `test-results/unlimited-restart-validation.json`。
 - 另在隔离数据/工作目录复用现有加密凭据，真实请求当前 `deepseek/deepseek-v4.1-flash`，返回 `CLAX_RUNTIME_OK`，有效输入预算 681,574；接口回传输入 259、输出 8、费用 $0.00008471。结果在 `test-results/unlimited-live-validation.json`。该验证没有写入正式聊天/本机用量，账户余额包含此真实费用。
 
+2026-10-22 OpenRouter 搜索引擎改为 auto（适配 DeepSeek 等无原生搜索的模型）：
+
+- `src/main/providers.ts` 的 `openrouter:web_search` 参数由 `engine: 'native'` 改为 `engine: 'auto'`。原生搜索只覆盖 OpenAI/Anthropic/Google/Perplexity/SpaceXAI；当前默认模型是 DeepSeek 系列，写死 `native` 会让搜索不可用。改为 auto 后这些模型回退 Exa（约 \$0.007/次，走 OpenRouter 余额）。
+- `pnpm test`：91 项通过，含更新后的联网搜索用例（断言服务端工具参数 engine 为 auto，并确认本地 `web_search` 函数工具与搜索的服务端工具不会同时发送、禁用后不发送、非 OpenRouter 不发送）。TypeScript 检查通过。
+- 未做真实付费搜索验证：本次没有可用调用 Key，也没有发起产生费用的请求。Exa 回退路径与原生路径一样，仅依据官方文档与 fixture 断言，未在实机确认 DeepSeek 模型真实返回引用。
+
 2026-10-16 OpenRouter 原生优先联网搜索：
 
 - 接入官方 `openrouter:web_search` server tool，使用现有加密调用 Key、native 优先，与本地函数工具共存。没有增加 OpenAI / Anthropic Key 或创建新 Key；保留 Tavily / SearXNG。模型按需搜索，禁用后不发送；后台记忆与压缩请求不附带搜索。

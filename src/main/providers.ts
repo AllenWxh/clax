@@ -110,7 +110,9 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
   async *stream(input: ModelRequest): AsyncIterable<ModelEvent> {
     const router = this.config.kind === 'openrouter'
     const tools: unknown[] = input.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } }))
-    if (router && input.webSearch) tools.push({ type: 'openrouter:web_search', parameters: { engine: 'native' } })
+    // "auto" keeps native search for models that have it and falls back to Exa for the rest
+    // (e.g. DeepSeek), billed to OpenRouter credits. "native" would break those models.
+    if (router && input.webSearch) tools.push({ type: 'openrouter:web_search', parameters: { engine: 'auto' } })
     if (router && input.reasoningEffort && !this.config.models.find(m => m.id === input.model)?.reasoningEfforts?.includes(input.reasoningEffort)) throw new Error('This model does not support the selected reasoning effort. Refresh the catalogue and choose again.')
     const response = await request(endpoint(this.config.baseUrl, 'chat/completions'), this.key, {
       method: 'POST', signal: input.signal, body: JSON.stringify({
