@@ -98,12 +98,13 @@ test('Memory extraction retains many long, evidenced facts and complete daily so
   const f = await setup()
   try {
     const quote = 'A durable project preference with supporting detail. '.repeat(55)
-    f.session.messages = [message('u', 'user', quote), message('tool', 'tool', 'OBSERVED '.repeat(1000) + 'JOURNAL-TAIL-MARKER')]
+    f.session.messages = [message('u', 'user', quote), { ...message('tool', 'tool', 'OBSERVED '.repeat(1000) + 'JOURNAL-TAIL-MARKER'), turnId: 'u' }]
     const memories = Array.from({ length: 12 }, (_, i) => ({ kind: 'preference', scope: 'project', key: `preference.${i}`, text: `Preference ${i}: ${quote}`, evidence: Array.from({ length: 6 }, () => ({ messageId: 'u', quote })) }))
     const result = JSON.stringify({ memories }); assert.ok(result.length > 24000)
     await f.store.memory.capture(f.session, f.session.messages.length, provider(result), f.session.currentModel!, f.context.signal, () => {}, 1_000_000)
     assert.equal(f.store.memory.status(true, true).learned, 12)
     const daily = await readdir(join(f.store.home, 'memory', 'daily'))
+    assert.equal(daily.length, 1)
     assert.match(await readFile(join(f.store.home, 'memory', 'daily', daily[0]!), 'utf8'), /JOURNAL-TAIL-MARKER/)
   } finally { await f.cleanup() }
 })
