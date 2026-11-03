@@ -25,3 +25,6 @@ coverage/
 credentials.json
 /providers.json
 /settings.json
+
+# Keep local agent instructions out of the public repository.
+AGENTS.md
