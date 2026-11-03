@@ -1,43 +1,43 @@
 # Clax
 
-**能改进自身源码与能力的 Personal Agent Harness。**
+**A Personal Agent Harness that can evolve its own code and capabilities.**
 
-[简体中文](README.md) · [English](README.en.md)
+[简体中文](README.zh-CN.md)
 
-Clax 是一个**可自行迭代的 Personal Agent Harness 框架**，以常驻桌面的个人 Agent 为入口，将模型接入、工具执行、长期记忆与任务控制组合成一个可持续扩展的运行环境。
+Clax is a **personal agent harness that can iterate on its own source code**. It brings model access, tool execution, long-term memory, and task control into an extensible framework, with a personal desktop agent as its interface.
 
-把 Clax 源码目录设为工作目录后，你可以直接让它**阅读自己的实现、修改自身源码、补充测试并执行构建**，为自己增加功能、调整界面或改进运行逻辑。修改可以通过 Git 追踪，核心源码更新在重新构建、重启后生效；工具插件则可以在运行中安装并使用。
+Set the working directory to the Clax source tree, and you can ask it to **read its own implementation, modify its own source, add tests, and run builds**. It can develop features, change its interface, and improve its runtime in response to your instructions. Changes can be tracked in Git; core source updates take effect after rebuilding and restarting, while tool plugins can be installed and used during a running session.
 
-日常使用时，一个快捷键就能唤起白色半透明窗口，开始聊天、查资料或处理项目。它保留会话和工作背景，用长期记忆积累偏好与项目决定，也让你随时补充指令、暂停或停止任务。
+For everyday work, a keyboard shortcut opens its translucent white window for conversation, research, and project tasks. It keeps your conversations and working context, builds lasting memory of preferences and project decisions, and lets you steer, pause, or stop work along the way.
 
-### 核心能力
+### What Clax can do
 
-| 能力 | 你可以做什么 |
+| Capability | What it means for your work |
 | --- | --- |
-| 自行迭代源码 | 让 Agent 在 Clax 源码工作区修改自己的核心逻辑、工具和界面，运行测试与构建，形成下一版。 |
-| 随手唤起 | 用 Option / Alt + C 打开窗口；隐藏窗口后，任务仍可继续。 |
-| 多模型选择 | 通过 OpenRouter 使用 Claude、GPT、DeepSeek、Gemini 等模型，选择模型支持的推理强度，查看余额和各模型用量。 |
-| 随时调整任务 | 流式查看回复，用 Steer 补充方向，或暂停、继续、停止正在执行的任务。 |
-| 延续工作背景 | 自动压缩较长的上下文，保留原始聊天；通过长期记忆检索偏好、事实和项目决定。 |
-| 联网与本地工具 | 搜索网络并保留来源，读取、搜索和修改工作区文件，运行 Shell 命令。 |
-| 按需扩展能力 | 用自然语言提出工具需求，让 Agent 编写、测试、安装插件；支持启停和版本回退。 |
-| 可选活动与提醒 | 开启后记录应用、窗口和操作时段，帮助回顾当天活动，并按设置主动提醒。两项默认关闭。 |
+| Iterate on its own source | Work in the Clax source tree to change its core logic, tools, and interface, then run tests and builds for the next version. |
+| Always within reach | Open with Option / Alt + C. Tasks can keep running while the window is hidden. |
+| Your choice of models | Access Claude, GPT, DeepSeek, Gemini, and other models through OpenRouter. Choose supported reasoning levels and check your balance and usage by model. |
+| Control during execution | Read streaming replies, add instructions with Steer, and pause, resume, or stop a task. |
+| Context that carries forward | Compact long conversations while keeping the originals, and retrieve preferences, facts, and project decisions from long-term memory. |
+| Web and local tools | Search the web with source links, read and edit workspace files, and run shell commands. |
+| Tools that can grow | Describe a tool you need and let the agent write, test, and install a plugin. Enable, disable, or roll back versions. |
+| Optional activity and reminders | Record app, window, and activity intervals to help review your day and receive reminders. Both features are off by default. |
 
-### 从这些事情开始
+### A few ways to start
 
-- **迭代自身**：“给你自己增加会话搜索功能，直接修改 Clax 源码，并运行测试和构建验证。”
-- **接手一个项目**：“看看当前项目，解释主要模块，再把运行方法整理出来。”
-- **找资料并采取行动**：“搜索这个问题的最新资料，保留来源，再根据结果修改当前文件。”
-- **建立工作记忆**：“记住：这个项目默认用中文回答，提交前先跑测试。”
-- **增加一个工具**：“给自己开发并安装一个调用我指定服务的插件，先测试再启用。”
+- **Improve Clax itself:** “Add conversation search to yourself by editing the Clax source, then run tests and verify the build.”
+- **Get oriented in a project:** “Explore this project, explain its main modules, and write down how to run it.”
+- **Research and act:** “Find current information about this issue, keep the sources, and use the findings to update the current file.”
+- **Build working memory:** “Remember: use Chinese for this project, and run tests before committing.”
+- **Add a tool:** “Develop and install a plugin for the service I specify. Test it before enabling it.”
 
-第三方服务仍需要你自己的 Key 或账号授权。活动记录只采样应用、窗口和时间，不记录打字内容；选中文字仅在你主动保存时读取。
+Third-party services still require your own credentials or account authorization. Activity recording samples apps, windows, and time; it does not log keystrokes. Selected text is read only when you explicitly save it.
 
-## 安装与首次使用
+## Installation and first run
 
-当前主要在 **macOS** 开发和验证，使用 Electron、React 和 TypeScript 构建。Windows / Linux 尚未实机验证；以下为源码安装方式。
+Clax is built with Electron, React, and TypeScript, and is currently developed and tested primarily on **macOS**. Windows and Linux have not been tested on real devices. The steps below run it from source.
 
-需要 **Node.js 22.16+**、**pnpm 10+**，以及 macOS **Xcode Command Line Tools**（未安装时运行 `xcode-select --install`）。
+Requires **Node.js 22.16+**, **pnpm 10+**, and **Xcode Command Line Tools** on macOS. If needed, install the latter with `xcode-select --install`.
 
 ```sh
 git clone https://github.com/AllenWxh/clax.git
@@ -46,34 +46,34 @@ pnpm install
 pnpm dev
 ```
 
-1. 启动后点击菜单栏 **C**，或按 **Option / Alt + C** 唤出窗口。
-2. 在 **Settings → Providers** 配置自己的 OpenRouter 调用 Key；也可引用本地环境变量 `OPENROUTER_API_KEY`。
-3. 在窗口顶部选择模型与工作目录，输入任务开始使用。
+1. Click **C** in the menu bar or press **Option / Alt + C** to open the window.
+2. Add your OpenRouter inference key in **Settings → Providers**, or reference the local `OPENROUTER_API_KEY` environment variable.
+3. Choose a model and working directory at the top of the window, then enter a task.
 
-### 安装桌面入口（macOS）
+### Desktop launcher (macOS)
 
 ```sh
 pnpm desktop:install
 ```
 
-这会创建 `~/Applications/Clax.app` 和桌面入口，并启用登录后后台启动。之后直接打开 **Clax.app**，无需每次运行终端命令。
+This creates `~/Applications/Clax.app` and a desktop shortcut, and enables background startup at login. You can then open **Clax.app** directly without starting it from a terminal each time.
 
-关闭自启动：`pnpm autostart:off`；重新开启：`pnpm autostart:on`。桌面入口依赖当前项目目录和依赖，移动项目后请重新安装。
+Use `pnpm autostart:off` to disable login startup, or `pnpm autostart:on` to enable it again. The launcher depends on the source directory and its dependencies; reinstall it after moving the project.
 
-## 基础操作
+## Basic usage
 
-| 操作 | 方式 |
+| Action | How |
 | --- | --- |
-| 唤出 / 隐藏 | Option / Alt + C；Esc 隐藏；菜单栏 C 也可打开窗口。 |
-| 发送 / 换行 | Enter 发送，Shift + Enter 换行。 |
-| 补充指令 | 任务运行时输入文字，按 Enter 或 Steer 调整方向。 |
-| 暂停 / 继续 / 结束 | 使用输入框旁的暂停、继续和 Stop。 |
-| 查看余额和用量 | 点击顶部余额；悬停模型用量条可看输入、缓存命中和输出。 |
+| Open / hide | Option / Alt + C toggles the window; Esc hides it. Click C in the menu bar to open it. |
+| Send / new line | Enter sends; Shift + Enter inserts a new line. |
+| Add instructions | While a task runs, type a message and press Enter or Steer. |
+| Pause / resume / stop | Use the controls beside the message input. |
+| Balance and usage | Click the balance at the top. Hover over a model's usage bar for input, cache-hit, and output counts. |
 
-联网搜索在 **Settings → Tools** 配置，记忆在 **Memory** 管理，插件在 **Extensions** 管理，活动记录与主动提醒在 **Activity** 开启。
+Configure web search in **Settings → Tools**, manage memory in **Memory**, manage plugins in **Extensions**, and enable activity recording and reminders in **Activity**.
 
-聊天和记忆默认保存在本机 `~/.clax`，使用远端模型时会发送当前请求所需的上下文。工具默认**全权授权**，可在 **Settings → General** 切换为自动判断或操作前确认。执行轮数、命令时长、文本大小、技能和记忆条数均不设 Clax 固定配额；模型窗口、系统权限、账号授权和插件隔离仍然生效。模型、搜索和后台记忆整理使用你自己的 API 额度。
+Chats and memories are stored locally in `~/.clax` by default. Relevant context is sent when using a remote model. Tools use **full access** by default; change this to automatic decisions or approval before actions in **Settings → General**. Clax imposes no fixed quotas on execution steps, command duration, text size, skills, or memory entries; model context windows, system permissions, account authorization, and plugin isolation still apply. Model calls, search, and background memory capture use your own API credits.
 
-Clax 目前是实验性项目。已有能力与验证范围见 [验证记录](TESTING.md)，参考项目和依赖见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+Clax is an experimental project. See [validation notes](TESTING.md) for tested behavior and limitations, and [third-party notices](THIRD_PARTY_NOTICES.md) for references and dependencies.
 
 [MIT License](LICENSE)
