@@ -10,6 +10,7 @@ import { createTools, ProcessManager } from './tools'
 import { ActivityObserver } from './activity'
 import { localDate } from './memory'
 import { REMINDER_PROMPT, ReminderScheduler, parseDecision, recentActivity } from './reminder'
+import { OPENAI_DEFAULT_MODEL } from '../shared/openai'
 
 interface RunState {
   controller: AbortController
@@ -54,8 +55,8 @@ export class AgentService {
   }
   private approvals() { return [...this.running.values()].flatMap(r => [...r.approvals.values()].map(a => a.request)) }
   private webSearch(ref: ModelRef | null) {
-    return Boolean(ref && this.store.settings.search.kind === 'openrouter' && !this.store.settings.disabledTools.includes('web_search')
-      && this.configs().some(p => p.id === ref.provider && p.kind === 'openrouter'))
+    return Boolean(ref && ['openai', 'openrouter'].includes(this.store.settings.search.kind) && !this.store.settings.disabledTools.includes('web_search')
+      && this.configs().some(p => p.id === ref.provider && p.kind === this.store.settings.search.kind))
   }
   async bootstrap(): Promise<AppSnapshot> {
     this.memorySecrets(this.session(this.currentId).workspace)
@@ -93,6 +94,21 @@ export class AgentService {
     this.sessions.clear()
     for (const old of legacy) this.deleteProvider(old.id)
     this.emit({ type: 'refresh' })
+  }
+  async importOpenAI() {
+    if (!environmentKey('OPENAI_API_KEY', this.session(this.currentId).workspace)) return
+    if (this.running.size) throw new Error('请先停止正在运行的任务，再接入 OpenAI。')
+    const existing = this.store.providers.find(p => p.kind === 'openai' && p.baseUrl === 'https://api.openai.com/v1')
+    const input: ProviderInput = { id: existing?.id, name: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', apiKeyEnv: 'OPENAI_API_KEY', toolCalling: true }
+    const models = await this.testProvider(input)
+    if (this.running.size) throw new Error('请先停止正在运行的任务，再接入 OpenAI。')
+    const provider = await this.saveProvider({ ...input, modelIds: models.map(m => m.id) })
+    const selected = provider.models.find(m => m.id === OPENAI_DEFAULT_MODEL) ?? provider.models[0]
+    if (selected && !this.session(this.currentId).currentModel) this.setModel(this.currentId, { provider: provider.id, model: selected.id })
+  }
+  async importDefaultProvider() {
+    if (!this.store.providers.length && environmentKey('OPENAI_API_KEY', this.session(this.currentId).workspace)) await this.importOpenAI()
+    else await this.importOpenRouter()
   }
   newSession() {
     const old = this.session(this.currentId)

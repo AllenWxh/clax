@@ -16,7 +16,7 @@ For everyday work, a keyboard shortcut opens its translucent white window for co
 | --- | --- |
 | Iterate on its own source | Work in the Clax source tree to change its core logic, tools, and interface, then run tests and builds for the next version. |
 | Always within reach | Open with Option / Alt + C. Tasks can keep running while the window is hidden. |
-| Your choice of models | Access Claude, GPT, DeepSeek, Gemini, and other models through OpenRouter. Choose supported reasoning levels and check your balance and usage by model. |
+| Your choice of models | Use GPT-6.1 Sol directly through OpenAI Responses with reasoning controls and tools, or choose Claude, DeepSeek, Gemini, and other models through OpenRouter. |
 | Control during execution | Read streaming replies, add instructions with Steer, and pause, resume, or stop a task. |
 | Context that carries forward | Compact long conversations while keeping the originals, and retrieve preferences, facts, and project decisions from long-term memory. |
 | Web and local tools | Search the web with source links, read and edit workspace files, and run shell commands. |
@@ -47,7 +47,7 @@ pnpm dev
 ```
 
 1. Click **C** in the menu bar or press **Option / Alt + C** to open the window.
-2. Add your OpenRouter inference key in **Settings → Providers**, or reference the local `OPENROUTER_API_KEY` environment variable.
+2. Add your OpenAI key in **Settings → Providers**, or reference the local `OPENAI_API_KEY` environment variable. OpenRouter remains available with its own key or `OPENROUTER_API_KEY`.
 3. Choose a model and working directory at the top of the window, then enter a task.
 
 ### Desktop launcher (macOS)
@@ -68,7 +68,7 @@ Use `pnpm autostart:off` to disable login startup, or `pnpm autostart:on` to ena
 | Send / new line | Enter sends; Shift + Enter inserts a new line. |
 | Add instructions | While a task runs, type a message and press Enter or Steer. |
 | Pause / resume / stop | Use the controls beside the message input. |
-| Balance and usage | Click the balance at the top. Hover over a model's usage bar for input, cache-hit, and output counts. |
+| Balance and usage | Click the header usage indicator. Bars show the selected provider's input, cache-hit, and output counts. OpenAI links to its official billing page; OpenRouter can show its account balance. |
 
 Configure web search in **Settings → Tools**, manage memory in **Memory**, manage plugins in **Extensions**, and enable activity recording and reminders in **Activity**.
 

@@ -5,6 +5,7 @@ const invoke = (name: string, ...args: unknown[]) => ipcRenderer.invoke(`clax:${
 const api: DesktopAPI = {
   provisionOpenRouter: (id, limit) => invoke('provisionOpenRouter', id, limit),
   importOpenRouter: () => invoke('importOpenRouter'), providerCredits: id => invoke('providerCredits', id), usageSummary: () => invoke('usageSummary'),
+  importOpenAI: () => invoke('importOpenAI'),
   extensionAction: (id, action) => invoke('extensionAction', id, action), connectExtension: (id, input) => invoke('connectExtension', id, input),
   disconnectExtension: id => invoke('disconnectExtension', id), openExtensionsFolder: () => invoke('openExtensionsFolder'),
   bootstrap: () => invoke('bootstrap'), send: (id, text) => invoke('send', id, text), stop: id => invoke('stop', id),

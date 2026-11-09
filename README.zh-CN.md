@@ -16,7 +16,7 @@ Clax 是一个**可自行迭代的 Personal Agent Harness 框架**，以常驻�
 | --- | --- |
 | 自行迭代源码 | 让 Agent 在 Clax 源码工作区修改自己的核心逻辑、工具和界面，运行测试与构建，形成下一版。 |
 | 随手唤起 | 用 Option / Alt + C 打开窗口；隐藏窗口后，任务仍可继续。 |
-| 多模型选择 | 通过 OpenRouter 使用 Claude、GPT、DeepSeek、Gemini 等模型，选择模型支持的推理强度，查看余额和各模型用量。 |
+| 多模型选择 | 通过 OpenAI Responses 直接使用 GPT-6.1 Sol、推理档位和工具，或通过 OpenRouter 选择 Claude、DeepSeek、Gemini 等模型。 |
 | 随时调整任务 | 流式查看回复，用 Steer 补充方向，或暂停、继续、停止正在执行的任务。 |
 | 延续工作背景 | 自动压缩较长的上下文，保留原始聊天；通过长期记忆检索偏好、事实和项目决定。 |
 | 联网与本地工具 | 搜索网络并保留来源，读取、搜索和修改工作区文件，运行 Shell 命令。 |
@@ -47,7 +47,7 @@ pnpm dev
 ```
 
 1. 启动后点击菜单栏 **C**，或按 **Option / Alt + C** 唤出窗口。
-2. 在 **Settings → Providers** 配置自己的 OpenRouter 调用 Key；也可引用本地环境变量 `OPENROUTER_API_KEY`。
+2. 在 **Settings → Providers** 配置自己的 OpenAI Key，或引用本地环境变量 `OPENAI_API_KEY`。也可继续使用 OpenRouter Key 或 `OPENROUTER_API_KEY`。
 3. 在窗口顶部选择模型与工作目录，输入任务开始使用。
 
 ### 安装桌面入口（macOS）
@@ -68,7 +68,7 @@ pnpm desktop:install
 | 发送 / 换行 | Enter 发送，Shift + Enter 换行。 |
 | 补充指令 | 任务运行时输入文字，按 Enter 或 Steer 调整方向。 |
 | 暂停 / 继续 / 结束 | 使用输入框旁的暂停、继续和 Stop。 |
-| 查看余额和用量 | 点击顶部余额；悬停模型用量条可看输入、缓存命中和输出。 |
+| 查看余额和用量 | 点击顶栏用量入口，悬停查看当前服务商各模型的输入、缓存命中和输出。OpenAI 提供官方账单入口；OpenRouter 可显示账号余额。 |
 
 联网搜索在 **Settings → Tools** 配置，记忆在 **Memory** 管理，插件在 **Extensions** 管理，活动记录与主动提醒在 **Activity** 开启。
 

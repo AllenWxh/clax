@@ -75,6 +75,7 @@ test('Usage ledger imports legacy totals once and exposes missing usage without 
     assert.equal(summary.total.inputTokens, 110); assert.equal(summary.total.outputTokens, 25)
     assert.equal(summary.total.cachedTokens, 60); assert.equal(summary.total.unreportedRequests, 2)
     assert.equal(summary.total.unpricedRequests, 4); assert.equal(summary.models.length, 3)
+    assert.equal(summary.models.find(m => m.model === 'b')!.costReportedRequests, 1, 'An explicit reported zero is known')
   } finally { db.close() }
 })
 test('Reasoning deltas preserve encrypted data and do not mix distinct indexes', () => {

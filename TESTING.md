@@ -2,6 +2,15 @@
 
 复验入口：`pnpm test`、`pnpm build`，以及 `package.json` 中各 `test:*` 桌面脚本。以下为历史验证记录，`test-results/` 中的本机报告、截图与数据不随源码发布；真实模型 smoke 脚本会消耗调用者的 API 额度。
 
+2026-11-09 OpenAI Responses 与 GPT-6.1 Sol：
+
+- OpenAI 直连使用 `/responses`：流式文本、推理档位、完整函数调用及回传结果；使用 `store:false`，按原 provider/model 保存并回传完整输出和加密推理。失败、不完整或提前结束的流不会执行未完成的计划，Steer/暂停保留一致的历史。上下文包含原生输出，避免将原生项及文本副本重复计数；原有 Chat Completions 兼容入口保留。
+- 模型目录来自所选 provider，GPT-6.1 Sol 容量与推理档位依据官方模型卡维护。模型菜单默认当前 provider；OpenAI 顶栏显示其本机 Token 用量与官方账单入口，OpenRouter 才查询自己的余额。费用未回传显示未知，明确返回零费用仍能区分；历史用量不重算。
+- OpenAI 原生 `web_search` 与本地工具共存，保存有效 HTTP(S) 来源及接口返回的完成调用；搜索关闭、provider 不匹配或后台记忆/压缩时不发送。首次无配置且有本地 OpenAI Key 时优先接入；已有 provider/model 选择不被启动流程替换。
+- `pnpm test`：97 项通过；`pnpm build`、TypeScript 和差异检查通过。Electron 共 48 项检查通过：OpenAI 8、主流程 26、OpenRouter 8、插件 6。覆盖多工具续接、跨模型与重启、按 provider 分开显示模型/用量、暂停/继续/Steer/停止、原生搜索与来源。这些桌面模型回复使用明确标注的本地协议 fixture。
+- 另用现有 Key 真实请求 GPT-6.1 Sol（low）：两次 Responses 完成工具往返及流式标记，合计输入 179、输出 25 tokens；一次原生搜索返回 Python 官方来源，输入 8,587、输出 90，接口返回一条完成搜索调用。简单工具测试没有返回推理项；加密推理续接由协议 fixture 验证。这些请求产生 API 用量，不混入正式聊天或本机统计。
+- 正式应用保留 317 条原消息、摘要、原加密凭据与 OpenRouter 配置，切到 OpenAI GPT-6.1 Sol、medium；原启用的 OpenRouter 搜索改为 OpenAI 搜索。数据已先做文件及 SQLite 备份，升级与最终核对记录保存在 `test-results/responses-upgrade-validation.json`。
+
 2026-10-21 移除余下内容配额与技能自我改写：
 
 - 移除摘要 2,200 tokens、背景 2,400 tokens、技能全文、记忆文件大小/目录层数/查询候选/提取条数与证据、活动条数/选区和引用数量的固定截断。摘要及请求仅按实际模型窗口分配；原文保留。项目指令和当前技能优先于历史检索，背景按完整来源装载；放不下时提示来源读取工具，避免半段 JSON 或技能进入请求。

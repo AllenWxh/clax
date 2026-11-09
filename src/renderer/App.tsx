@@ -63,6 +63,7 @@ export function App() {
   const [popover, setPopover] = useState<'models' | 'history' | 'usage' | null>(null)
   const [modelQuery, setModelQuery] = useState('')
   const [showAllModels, setShowAllModels] = useState(false)
+  const [modelProvider, setModelProvider] = useState('')
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null)
   const [addProvider, setAddProvider] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -109,6 +110,10 @@ export function App() {
   const paused = Boolean(session.paused) && !running
   const pausing = Boolean(session.paused) && running
   const selected = snapshot.providers.flatMap(p => p.models).find(m => m.provider === session.currentModel?.provider && m.id === session.currentModel.model)
+  const provider = snapshot.providers.find(p => p.id === session.currentModel?.provider)
+  const catalog = snapshot.providers.find(p => p.id === modelProvider) ?? provider ?? snapshot.providers[0]
+  const search = snapshot.settings.search.kind
+  const searchEnabled = !snapshot.settings.disabledTools.includes('web_search') && (['openai', 'openrouter'].includes(search) ? search === provider?.kind : search !== 'none')
   const configured = Boolean(selected)
   const approvals = snapshot.approvals.filter(a => a.sessionId === session.id)
   const collapsed = snapshot.windowMode === 'collapsed'
@@ -130,12 +135,13 @@ export function App() {
     <header className="titlebar">
       <div className="brand"><span className="brand-mark">C</span><span className="brand-name">Clax</span></div>
       <div className="model-area">
-        <button className="model-button popover-trigger" data-testid="model-picker" onClick={() => setPopover(popover === 'models' ? null : 'models')}><span className={`connection-dot ${configured ? 'connected' : ''}`} /><span className="model-name">{selected?.name.replace(/^[^:]+:\s*/, '') ?? 'Select a model'}</span><ChevronDown size={13} /></button>
+        <button className="model-button popover-trigger" data-testid="model-picker" onClick={() => { setModelProvider(session.currentModel?.provider ?? ''); setPopover(popover === 'models' ? null : 'models') }}><span className={`connection-dot ${configured ? 'connected' : ''}`} /><span className="model-name">{selected?.name.replace(/^[^:]+:\s*/, '') ?? 'Select a model'}</span><ChevronDown size={13} /></button>
         {popover === 'models' && <div className="popover model-popover"><div className="popover-heading">Switch model <span>Same conversation</span></div>
+          <label className="reasoning-select">服务商<select aria-label="Model provider" value={catalog?.id ?? ''} onChange={e => { setModelProvider(e.target.value); setModelQuery('') }}>{snapshot.providers.map(p => <option key={p.id} value={p.id}>{p.name}{p.kind === 'openai' ? ' · Responses API' : ''}</option>)}</select></label>
           <input className="model-search" placeholder="Search models…" value={modelQuery} onChange={e => setModelQuery(e.target.value)} autoFocus />
-          {selected?.reasoningEfforts?.length ? <label className="reasoning-select">推理强度<select aria-label="Reasoning effort" value={session.currentModel?.reasoningEffort ?? 'auto'} onChange={e => { void action(() => api.setModel(session.id, { ...session.currentModel!, reasoningEffort: e.target.value === 'auto' ? undefined : e.target.value as NonNullable<typeof session.currentModel>['reasoningEffort'] })) }}><option value="auto">模型默认</option>{selected.reasoningEfforts.map(effort => <option key={effort} value={effort}>{reasoningLabels[effort]}</option>)}</select></label> : null}
-          {snapshot.providers.some(p => p.kind === 'openrouter') && <div className="model-catalog-controls"><button className="text-button" onClick={() => setShowAllModels(!showAllModels)}>{showAllModels ? '只看常用模型' : '全部模型'}</button><button className="text-button" onClick={() => { void action(async () => { const p = snapshot.providers.find(p => p.kind === 'openrouter')!; await api.refreshProvider(p.id); await refresh() }) }}>刷新目录</button></div>}
-          <div className="model-options">{snapshot.providers.map(provider => <div key={provider.id}><div className="provider-heading">{provider.name}</div>
+          {selected?.provider === catalog?.id && selected?.reasoningEfforts?.length ? <label className="reasoning-select">推理强度<select aria-label="Reasoning effort" value={session.currentModel?.reasoningEffort ?? 'auto'} onChange={e => { void action(() => api.setModel(session.id, { ...session.currentModel!, reasoningEffort: e.target.value === 'auto' ? undefined : e.target.value as NonNullable<typeof session.currentModel>['reasoningEffort'] })) }}><option value="auto">模型默认</option>{selected.reasoningEfforts.map(effort => <option key={effort} value={effort}>{reasoningLabels[effort]}</option>)}</select></label> : null}
+          {catalog && <div className="model-catalog-controls">{catalog.kind === 'openrouter' && <button className="text-button" onClick={() => setShowAllModels(!showAllModels)}>{showAllModels ? '只看常用模型' : '全部模型'}</button>}<button className="text-button" onClick={() => { void action(async () => { await api.refreshProvider(catalog.id); await refresh() }) }}>刷新目录</button></div>}
+          <div className="model-options">{snapshot.providers.filter(p => p.id === catalog?.id).map(provider => <div key={provider.id}><div className="provider-heading">{provider.name}{provider.kind === 'openai' ? ' · Responses API' : ''}</div>
             {(provider.kind === 'openrouter' && !showAllModels && !modelQuery ? [...new Map([...(selected?.provider === provider.id ? [selected] : []), ...commonModels(provider.models)].map(m => [m.id, m])).values()] : provider.models).filter(m => `${m.name} ${m.id}`.toLowerCase().includes(modelQuery.toLowerCase())).map(model => <button className={`model-option ${selected?.provider === model.provider && selected.id === model.id ? 'selected' : ''}`} key={model.id}
               onClick={() => { void action(() => api.setModel(session.id, { provider: provider.id, model: model.id })); setPopover(null) }}>
               <span><b>{model.name}</b><small>{model.tools ? 'Tools' : 'Chat'}{model.contextWindow ? ` · ${(model.contextWindow / 1000).toFixed(0)}k context` : ''}</small></span>
@@ -158,7 +164,7 @@ export function App() {
     </header>
     <div className="workspace-bar"><button className="workspace-button" title={session.workspace} disabled={running} onClick={() => { void action(() => api.chooseWorkspace(session.id)) }}><Folder size={13} /><span>{folderName(session.workspace)}</span><ChevronDown size={11} /></button>
       <span className="local-label"><span /> Local runtime</span>
-      <button className="activity-indicator" aria-label="Web search settings" title="查看和配置联网搜索" onClick={() => { setAddProvider(false); setSettingsTab('Tools') }}><Globe size={12} />{snapshot.tools.some(t => t.name === 'web_search' && t.available) ? '联网搜索已启用' : '联网搜索关闭'}</button>
+      <button className="activity-indicator" aria-label="Web search settings" title="查看和配置联网搜索" onClick={() => { setAddProvider(false); setSettingsTab('Tools') }}><Globe size={12} />{searchEnabled && (['openai', 'openrouter'].includes(search) || snapshot.tools.some(t => t.name === 'web_search' && t.available)) ? '联网搜索已启用' : '联网搜索关闭'}</button>
       <button className="activity-indicator" onClick={() => { setAddProvider(false); setSettingsTab('Activity') }} title="查看和控制电脑活动记录"><span className={`activity-dot ${snapshot.activityStatus.enabled ? 'on' : ''}`} />{snapshot.activityStatus.enabled ? '活动记录开启' : '活动记录暂停'}</button>
       <div className="permission-control" title="权限设置会跨会话和重启保留；全权授权下可用工具直接执行。"><ShieldCheck size={12} /><select aria-label="Agent permissions" value={snapshot.settings.permissionMode} onChange={e => { void action(() => api.saveSettings({ ...snapshot.settings, permissionMode: e.target.value as 'ask' | 'auto' | 'full' })) }}><option value="full">全权授权</option><option value="auto">自动判断</option><option value="ask">操作前确认</option></select></div>
     </div>

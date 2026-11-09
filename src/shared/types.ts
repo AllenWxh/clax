@@ -60,7 +60,7 @@ export interface ProviderCredits {
 export interface UsageTotals {
   inputTokens: number; outputTokens: number; cachedTokens: number; cacheWriteTokens: number; reasoningTokens: number
   requests: number; unreportedRequests: number; cacheReportedRequests: number; unpricedRequests: number
-  reportedCost: number; estimatedCost: number
+  reportedCost: number; estimatedCost: number; costReportedRequests: number
   webSearchRequests: number; webSearchReportedRequests: number
 }
 export interface UsageSummary { total: UsageTotals; models: (UsageTotals & { provider: string; model: string })[] }
@@ -95,6 +95,7 @@ export interface Message {
   toolName?: string
   reasoningContent?: string
   reasoningDetails?: Record<string, unknown>[]
+  responseItems?: Record<string, unknown>[] // Complete OpenAI output, including encrypted reasoning and function-call IDs.
   citations?: WebCitation[]
   webSearchRequests?: number
   activities?: ToolActivity[]
@@ -126,7 +127,7 @@ export interface AppSettings {
   maxContextChars: number // 0 follows model capacity; positive legacy values are 3 times the input-token budget.
   memory: { enabled: boolean; autoCapture: boolean }
   activity: { enabled: boolean; useInMemory: boolean; retentionDays: number; excludedApps: string[] }
-  search: { kind: 'none' | 'openrouter' | 'tavily' | 'searxng'; baseUrl: string }
+  search: { kind: 'none' | 'openai' | 'openrouter' | 'tavily' | 'searxng'; baseUrl: string }
   reminder: { enabled: boolean; intervalMinutes: number; quietStart: string; quietEnd: string }
 }
 export interface ActivityEntry {
@@ -191,6 +192,7 @@ export interface ModelRequest {
 export type ModelEvent =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text?: string; details?: Record<string, unknown>[] }
+  | { type: 'response_output'; items: Record<string, unknown>[] }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'usage'; usage: Usage }
   | { type: 'citations'; citations: WebCitation[] }
@@ -266,6 +268,7 @@ export interface DesktopAPI {
   providerCredits(id: string): Promise<ProviderCredits | null>
   usageSummary(): Promise<UsageSummary>
   importOpenRouter(): Promise<void>
+  importOpenAI(): Promise<void>
   extensionAction(id: string, action: 'test' | 'install' | 'enable' | 'disable' | 'rollback'): Promise<void>
   connectExtension(id: string, input: { apiKey?: string; clientId?: string; clientSecret?: string }): Promise<void>
   disconnectExtension(id: string): Promise<void>

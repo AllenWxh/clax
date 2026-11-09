@@ -31,6 +31,7 @@
     "test:desktop": "pnpm build && tsx scripts/desktop-test.ts",
     "test:shortcut": "pnpm build && tsx scripts/shortcut-desktop-test.ts",
     "test:openrouter": "pnpm build && tsx scripts/openrouter-desktop-test.ts",
+    "test:openai": "pnpm build && tsx scripts/openai-desktop-test.ts",
     "test:activity": "pnpm build && tsx scripts/activity-desktop-test.ts",
     "test:extensions": "pnpm build && tsx scripts/extensions-desktop-test.ts"
   },

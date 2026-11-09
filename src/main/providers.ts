@@ -5,6 +5,7 @@ import { REASONING_EFFORTS } from '../shared/models'
 import { parseCitations } from '../shared/citations'
 import { contextLimits } from '../shared/context'
 import { requestTokens } from './context'
+import { OPENAI_DEFAULT_MODEL, openAIChatModel, openAIModel } from '../shared/openai'
 
 export function endpoint(base: string, path: string) { return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}` }
 
@@ -155,6 +156,77 @@ export class CompatibleProvider extends BaseProvider implements ModelProvider {
   }
 }
 
+export class OpenAIProvider extends BaseProvider implements ModelProvider {
+  async listModels(signal?: AbortSignal): Promise<ModelInfo[]> {
+    const body = await (await request(endpoint(this.config.baseUrl, 'models'), this.key, { signal })).json() as any
+    if (!Array.isArray(body.data)) throw new Error('OpenAI 未返回模型目录。')
+    return body.data.filter((m: any) => typeof m.id === 'string' && openAIChatModel(m.id))
+      .map((m: any) => this.model(m.id, m.id, openAIModel(m.id)))
+      .sort((a: ModelInfo, b: ModelInfo) => Number(b.id === OPENAI_DEFAULT_MODEL) - Number(a.id === OPENAI_DEFAULT_MODEL) || a.id.localeCompare(b.id))
+  }
+  private input(request: ModelRequest): Record<string, unknown>[] {
+    return request.messages.flatMap(m => {
+      if (m.role === 'tool') return [{ type: 'function_call_output', call_id: m.toolCallId, output: m.content }]
+      // Replay complete items only to their original provider/model. Other histories keep plain text and paired calls.
+      if (m.role === 'assistant' && m.model?.provider === this.id && m.model.model === request.model && m.responseItems?.length) return m.responseItems
+      return [...(m.content ? [{ role: m.role, content: m.content }] : []),
+        ...(m.toolCalls ?? []).map(c => ({ type: 'function_call', call_id: c.id, name: c.name, arguments: JSON.stringify(c.arguments) }))]
+    })
+  }
+  async *stream(input: ModelRequest): AsyncIterable<ModelEvent> {
+    const efforts = this.config.models.find(m => m.id === input.model)?.reasoningEfforts ?? openAIModel(input.model).reasoningEfforts
+    if (input.reasoningEffort && !efforts?.includes(input.reasoningEffort)) throw new Error('该 OpenAI 模型不支持所选推理强度，请刷新模型目录。')
+    const tools: unknown[] = input.tools.map(t => ({ type: 'function', name: t.name, description: t.description, parameters: t.inputSchema, strict: false }))
+    if (input.webSearch) tools.push({ type: 'web_search' })
+    const response = await request(endpoint(this.config.baseUrl, 'responses'), this.key, {
+      method: 'POST', signal: input.signal, body: JSON.stringify({ model: input.model, instructions: input.system,
+        input: this.input(input), stream: true, store: false, include: ['reasoning.encrypted_content'],
+        ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
+        ...(input.maxOutputTokens ? { max_output_tokens: input.maxOutputTokens } : {}), ...(tools.length ? { tools } : {}) }),
+    })
+    let completed = false, text = ''
+    for await (const { event, data } of sse(response)) {
+      const type = data.type ?? event
+      if (type === 'error') throw new Error(`OpenAI: ${data.error?.message ?? data.message ?? '响应失败'}`)
+      if (type === 'response.output_text.delta' || type === 'response.refusal.delta') {
+        if (typeof data.delta !== 'string') throw new Error('OpenAI 返回了无效的文本片段。')
+        text += data.delta; yield { type: 'text', text: data.delta }
+      } else if (type === 'response.output_item.added' && data.item?.type === 'reasoning') yield { type: 'reasoning' }
+      else if (type === 'response.reasoning_summary_text.delta') yield { type: 'reasoning', text: data.delta }
+      if (!['response.completed', 'response.failed', 'response.incomplete'].includes(type)) continue
+      const result = data.response, u = result?.usage
+      const output: Record<string, any>[] = Array.isArray(result?.output) ? result.output : []
+      const searches = output.filter(item => item.type === 'web_search_call' && item.status === 'completed').length
+      if (typeof u?.input_tokens === 'number' && typeof u?.output_tokens === 'number') yield { type: 'usage', usage: {
+        inputTokens: u.input_tokens, outputTokens: u.output_tokens, cachedTokens: u.input_tokens_details?.cached_tokens,
+        cacheWriteTokens: u.input_tokens_details?.cache_write_tokens, reasoningTokens: u.output_tokens_details?.reasoning_tokens,
+        ...(searches ? { webSearchRequests: searches } : {}),
+      } }
+      if (type !== 'response.completed') throw new Error(`OpenAI 响应未完成：${result?.error?.message ?? result?.incomplete_details?.reason ?? result?.status ?? type}`)
+      if (completed || !Array.isArray(result?.output)) throw new Error('OpenAI 返回了无效的完成事件。')
+      completed = true
+      // Never execute partial tool arguments. The terminal output is authoritative, including every reasoning item.
+      const calls = output.filter(item => item.type === 'function_call').map(item => {
+        if (typeof item.call_id !== 'string' || !item.call_id || typeof item.name !== 'string' || !item.name || item.status && item.status !== 'completed') throw new Error('OpenAI 返回了无效的工具调用。')
+        return { id: item.call_id, name: item.name, arguments: argumentsObject(item.arguments) }
+      })
+      if (new Set(calls.map(c => c.id)).size !== calls.length) throw new Error('OpenAI 返回了重复的工具调用 ID。')
+      let visible = '', citations: ReturnType<typeof parseCitations> = []
+      for (const item of output.filter(item => item.type === 'message')) for (const part of item.content ?? []) {
+        citations.push(...parseCitations(part.annotations).map(c => ({ ...c,
+          startIndex: c.startIndex === undefined ? undefined : c.startIndex + visible.length,
+          endIndex: c.endIndex === undefined ? undefined : c.endIndex + visible.length })))
+        visible += part.text ?? part.refusal ?? ''
+      }
+      if (visible.startsWith(text) && visible.length > text.length) yield { type: 'text', text: visible.slice(text.length) }
+      if (citations.length) yield { type: 'citations', citations }
+      yield { type: 'response_output', items: output }
+      for (const call of calls) yield { type: 'tool_call', call }
+    }
+    if (!completed) throw new Error('OpenAI 响应流提前结束，未完成的工具计划不会执行。')
+  }
+}
+
 export class AnthropicProvider extends BaseProvider implements ModelProvider {
   private headers() { return { 'x-api-key': this.key, 'anthropic-version': '2023-06-01' } }
   async listModels(signal?: AbortSignal): Promise<ModelInfo[]> {
@@ -292,7 +364,8 @@ export class MockProvider extends BaseProvider implements ModelProvider {
 }
 export function createProvider(config: ProviderConfig, key: string, creditsKey?: string): ModelProvider {
   switch (config.kind) {
-    case 'openrouter': case 'openai': case 'compatible': return new CompatibleProvider(config, key, creditsKey)
+    case 'openai': return new OpenAIProvider(config, key)
+    case 'openrouter': case 'compatible': return new CompatibleProvider(config, key, creditsKey)
     case 'anthropic': return new AnthropicProvider(config, key)
     case 'gemini': return new GeminiProvider(config, key)
     case 'ollama': return new OllamaProvider(config, key)

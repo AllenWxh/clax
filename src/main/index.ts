@@ -119,7 +119,7 @@ const settingsSchema = z.object({
   memory: z.object({ enabled: z.boolean(), autoCapture: z.boolean() }),
   activity: z.object({ enabled: z.boolean(), useInMemory: z.boolean(), retentionDays: z.number().int().nonnegative(),
     excludedApps: z.array(z.string().trim().min(1)) }).default(defaultActivity),
-  search: z.object({ kind: z.enum(['none', 'openrouter', 'tavily', 'searxng']), baseUrl: z.string() }),
+  search: z.object({ kind: z.enum(['none', 'openai', 'openrouter', 'tavily', 'searxng']), baseUrl: z.string() }),
   reminder: z.object({ enabled: z.boolean(), intervalMinutes: z.number().positive(),
     quietStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), quietEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }).default(defaultReminder),
 })
@@ -134,6 +134,7 @@ function registerIPC() {
   const id = (value: unknown) => z.string().min(1).parse(value)
   handle('bootstrap', () => service.bootstrap())
   handle('importOpenRouter', () => service.importOpenRouter())
+  handle('importOpenAI', () => service.importOpenAI())
   handle('usageSummary', () => service.usageSummary())
   handle('providerCredits', providerId => service.providerCredits(id(providerId)))
   handle('provisionOpenRouter', (providerId, limit) => service.provisionOpenRouter(id(providerId), z.number().finite().nonnegative().nullish().parse(limit) ?? null))
@@ -255,7 +256,7 @@ app.whenReady().then(async () => {
   if (!process.env.CLAX_TEST && !process.env.DESKAGENT_TEST) {
     try { startShortcut() } catch { /* Keep the tray available so a conflicting shortcut can be changed. */ }
     // A temporary catalogue/network failure must not prevent the tray/UI from starting.
-    void service.importOpenRouter().catch(() => {}).finally(() => service.startMemory())
+    void service.importDefaultProvider().catch(() => {}).finally(() => service.startMemory())
   }
   screen.on('display-metrics-changed', () => { if (!quitting && !window.isDestroyed() && window.isVisible()) { const size = window.getSize(); dock(size[0] ?? 840, size[1] ?? 700) } })
 }).catch(error => { dialog.showErrorBox('Clax could not start', error instanceof Error ? error.message : String(error)); quitting = true; app.quit() })

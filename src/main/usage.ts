@@ -46,6 +46,7 @@ export class UsageStore {
       COALESCE(SUM(reasoning),0) reasoningTokens, COALESCE(SUM(requests),0) requests,
       COALESCE(SUM(missing),0) unreportedRequests, COALESCE(SUM(cache_known),0) cacheReportedRequests,
       COALESCE(SUM(CASE WHEN cost IS NULL THEN requests ELSE 0 END),0) unpricedRequests,
+      COALESCE(SUM(CASE WHEN cost_kind='reported' AND cost IS NOT NULL THEN requests ELSE 0 END),0) costReportedRequests,
       COALESCE(SUM(CASE WHEN cost_kind='reported' THEN cost ELSE 0 END),0) reportedCost,
       COALESCE(SUM(CASE WHEN cost_kind='estimated' THEN cost ELSE 0 END),0) estimatedCost,
       COALESCE(SUM(web_search),0) webSearchRequests,

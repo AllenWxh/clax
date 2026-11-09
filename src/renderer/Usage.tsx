@@ -6,7 +6,8 @@ import type { AppSnapshot, ProviderCredits, UsageSummary } from '../shared/types
 const api = window.clax
 const dollars = (value: number | null | undefined) => value == null ? '—' : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 })}`
 export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; open: boolean; toggle: () => void }) {
-  const provider = snapshot.providers.find(p => p.id === snapshot.session.currentModel?.provider && p.kind === 'openrouter') ?? snapshot.providers.find(p => p.kind === 'openrouter')
+  const provider = snapshot.providers.find(p => p.id === snapshot.session.currentModel?.provider)
+  const router = provider?.kind === 'openrouter'
   const [credits, setCredits] = useState<ProviderCredits | null>(null), [summary, setSummary] = useState<UsageSummary | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [keyLimit, setKeyLimit] = useState('')
   const [hovered, setHovered] = useState<{ id: string; left: number; top: number } | null>(null)
@@ -19,7 +20,7 @@ export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; 
     const current = ++generation.current
     setBusy(true)
     try {
-      const [balance, usage] = await Promise.allSettled([provider ? api.providerCredits(provider.id) : Promise.resolve(null), api.usageSummary()])
+      const [balance, usage] = await Promise.allSettled([provider && router ? api.providerCredits(provider.id) : Promise.resolve(null), api.usageSummary()])
       if (current !== generation.current) return
       setError(balance.status === 'rejected' ? '余额查询失败，可点击刷新。' : '')
       if (balance.status === 'fulfilled') setCredits(balance.value)
@@ -27,24 +28,26 @@ export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; 
       else setError('本机用量读取失败。')
     } finally { if (current === generation.current) setBusy(false) }
   }
-  useEffect(() => { setCredits(null); void refresh(); return () => { generation.current++ } }, [provider?.id])
+  useEffect(() => { setCredits(null); setSummary(null); setHovered(null); void refresh(); return () => { generation.current++ } }, [provider?.id])
   const requests = snapshot.session.usage.reportedRequests + snapshot.session.usage.unreportedRequests
   useEffect(() => { const timer = setTimeout(() => { void refresh() }, 1200); return () => clearTimeout(timer) }, [requests])
   useEffect(() => { setHovered(null); if (open) void refresh() }, [open])
   useEffect(() => { const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 60000); return () => clearInterval(timer) }, [provider?.id])
-  const models = summary?.models.filter(model => model.requests > 0).sort((a, b) => b.inputTokens + b.outputTokens - a.inputTokens - a.outputTokens) ?? []
+  const models = summary?.models.filter(model => model.provider === provider?.id && model.requests > 0).sort((a, b) => b.inputTokens + b.outputTokens - a.inputTokens - a.outputTokens) ?? []
+  const totalTokens = models.reduce((total, model) => total + model.inputTokens + model.outputTokens, 0)
   const maximum = Math.max(1, ...models.map(model => model.inputTokens + model.outputTokens))
-  const rows = [
+  const rows = router ? [
     ['账户余额', credits?.balance != null ? dollars(credits.balance) : '不可用'],
     ['Key 剩余限额', credits?.keyLimit === null ? '未设限额' : dollars(credits?.keyRemaining)],
-  ]
+  ] : []
   return <div className="usage-area">
-    <button className="balance-button popover-trigger" aria-label="Session usage" data-testid="balance-button" onClick={toggle} title="查看余额和累计用量">
-      <span>余额</span><strong>{credits?.balance != null ? dollars(credits.balance) : credits?.keyRemaining != null ? dollars(credits.keyRemaining) : busy ? '查询中…' : '—'}</strong>
-      {credits?.balance == null && credits?.keyRemaining != null && <small>Key 限额</small>}
+    <button className="balance-button popover-trigger" aria-label="Session usage" data-testid="balance-button" onClick={toggle} title={`查看 ${provider?.name ?? ''} 累计用量${router ? '与余额' : ''}`}>
+      <span>{router ? '余额' : `${provider?.name ?? ''} 用量`}</span><strong>{router ? credits?.balance != null ? dollars(credits.balance) : credits?.keyRemaining != null ? dollars(credits.keyRemaining) : busy ? '查询中…' : '—' : totalTokens.toLocaleString()}</strong>
+      {router && credits?.balance == null && credits?.keyRemaining != null && <small>Key 限额</small>}
     </button>
-    {open && <div className="popover usage-popover" data-testid="usage-panel" onScroll={() => setHovered(null)}><div className="popover-heading">余额与模型用量<button className="text-button" aria-label="Refresh usage" disabled={busy} onClick={() => { void refresh() }}><RefreshCw size={13} className={busy ? 'spin' : ''} /></button></div>
+    {open && <div className="popover usage-popover" data-testid="usage-panel" onScroll={() => setHovered(null)}><div className="popover-heading">{provider?.name ?? '本机'} · {router ? '余额与模型用量' : '模型用量'}<button className="text-button" aria-label="Refresh usage" disabled={busy} onClick={() => { void refresh() }}><RefreshCw size={13} className={busy ? 'spin' : ''} /></button></div>
       {rows.map(([label, value]) => <div className="usage-line" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+      {provider?.kind === 'openai' && <div className="usage-billing"><p className="muted">这里显示本机 OpenAI Token 用量；账户余额和官方账单请到 OpenAI 查看。</p><button className="text-button" onClick={() => { void api.openExternal('https://platform.openai.com/settings/organization/billing') }}>打开 OpenAI 账单</button></div>}
       {credits?.managementKey && provider && <div className="usage-key-warning"><p>当前是管理 Key，不能聊天。可创建一把 Clax 调用 Key，由系统加密保存；额度可选，留空不设 Key 限额，管理 Key 保留查余额。</p><input aria-label="调用 Key 累计额度" type="number" min="0" step="any" placeholder="不限额（可选 USD 上限）" value={keyLimit} onChange={e => setKeyLimit(e.target.value)} /><button className="secondary-button" disabled={busy} onClick={() => { void (async () => { try { setBusy(true); await api.provisionOpenRouter(provider.id, keyLimit.trim() ? Number(keyLimit) : null); await refresh() } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false) } })() }}>创建 Clax 调用 Key</button></div>}
       <div className="usage-bars" aria-label="模型累计用量">{models.map((model, index) => {
         const amount = model.inputTokens + model.outputTokens
@@ -53,10 +56,10 @@ export function UsagePanel({ snapshot, open, toggle }: { snapshot: AppSnapshot; 
         return <div className="usage-bar-row" key={id} tabIndex={0} data-testid="model-usage-row" aria-label={`${name} 用量`} onMouseEnter={e => hover(id, e.currentTarget)} onMouseLeave={() => setHovered(null)} onFocus={e => hover(id, e.currentTarget)} onBlur={() => setHovered(null)}>
           <div className="usage-bar-label"><span>{name}</span><small>{amount ? amount.toLocaleString() : '未回传'} tokens</small></div>
           <div className="usage-bar-track"><div className={`usage-bar-fill shade-${index % 3}`} style={{ width: `${amount / maximum * 100}%` }} /></div>
-          {hovered?.id === id && createPortal(<div className="usage-bar-tooltip" role="tooltip" style={{ left: hovered.left, top: hovered.top }}><strong>{name}</strong><span>输入 {model.inputTokens.toLocaleString()}</span><span>缓存命中 {model.cacheReportedRequests ? model.cachedTokens.toLocaleString() : '未回传'}（包含在输入中）</span><span>输出 {model.outputTokens.toLocaleString()}</span>{model.cacheWriteTokens > 0 && <span>缓存写入 {model.cacheWriteTokens.toLocaleString()}</span>}<span>API 费用 {dollars(model.reportedCost)}</span>{model.webSearchReportedRequests > 0 && <span>联网搜索 {model.webSearchRequests.toLocaleString()} 次</span>}{model.estimatedCost > 0 && <span>另有估算费用 {dollars(model.estimatedCost)}</span>}{model.unreportedRequests > 0 && <span>{model.unreportedRequests} 次未回传完整用量</span>}{model.unpricedRequests > 0 && <span>{model.unpricedRequests} 次未回传费用</span>}</div>, document.body)}
+          {hovered?.id === id && createPortal(<div className="usage-bar-tooltip" role="tooltip" style={{ left: hovered.left, top: hovered.top }}><strong>{name}</strong><span>输入 {model.inputTokens.toLocaleString()}</span><span>缓存命中 {model.cacheReportedRequests ? model.cachedTokens.toLocaleString() : '未回传'}（包含在输入中）</span><span>输出 {model.outputTokens.toLocaleString()}</span>{model.cacheWriteTokens > 0 && <span>缓存写入 {model.cacheWriteTokens.toLocaleString()}</span>}<span>API 费用 {dollars(model.costReportedRequests ? model.reportedCost : null)}</span>{model.webSearchReportedRequests > 0 && <span>联网搜索 {model.webSearchRequests.toLocaleString()} 次</span>}{model.estimatedCost > 0 && <span>另有估算费用 {dollars(model.estimatedCost)}</span>}{model.unreportedRequests > 0 && <span>{model.unreportedRequests} 次未回传完整用量</span>}{model.unpricedRequests > 0 && <span>{model.unpricedRequests} 次未回传费用</span>}</div>, document.body)}
         </div>
       })}{!models.length && <p className="muted">还没有模型用量，使用后会显示在这里。</p>}</div>
-      <p className="muted">条长按累计输入 + 输出 Token 比较，悬停查看明细。缓存命中包含在输入中。联网搜索费用以接口返回总费用为准。仅统计本机 Clax 用量；账户余额会受其他应用消费影响，接口记账可能延迟。</p>
+      <p className="muted">按当前服务商的累计输入 + 输出 Token 比较，悬停查看明细。缓存命中包含在输入中。仅统计本机 Clax 用量；未回传的费用保持未知。{router ? '账户余额会受其他应用消费影响，接口记账可能延迟。' : '顶部数字为累计 Token 数。'}</p>
       {(error || credits?.error) && <p className="error-text" role="status">{error || credits?.error}</p>}
       {credits && <small className="usage-updated">余额更新于 {new Date(credits.updatedAt).toLocaleTimeString()}</small>}
     </div>}

@@ -63,6 +63,7 @@ export class LocalAgentRuntime implements AgentRuntime {
               emit({ type: 'reasoning_started' })
             }
             else if (event.type === 'tool_call') current.toolCalls!.push(event.call)
+            else if (event.type === 'response_output') current.responseItems = event.items
             else if (event.type === 'citations') {
               current.citations = mergeCitations(current.citations ?? [], event.citations)
               emit({ type: 'citations_updated', messageId: current.id, citations: current.citations })
@@ -70,6 +71,8 @@ export class LocalAgentRuntime implements AgentRuntime {
             else if (event.type === 'usage') { usage = event.usage; current.webSearchRequests = usage.webSearchRequests }
           }
         } catch (error) {
+          // A cancelled or failed stream cannot leave a server-side tool plan without matching results.
+          current.responseItems = undefined
           if (!signal.aborted && !steered && contextOverflow(error)) {
             current.status = 'interrupted'; current.toolCalls = []
             recoverOverflow = true
